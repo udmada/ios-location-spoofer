@@ -1,5 +1,7 @@
 # IOS Location Spoofer
 
+Standalone IOS app to spoof GPS location without jailbreaks. Untethered, local, and open source.
+
 > [!NOTE]
 > Update 2026-01-19: Apple has rejected this app from testflight. You must have an Apple developer account to sideload onto your own device.
 
