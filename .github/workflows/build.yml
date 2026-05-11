@@ -46,6 +46,13 @@ jobs:
           echo -n "$APP_PROFILE" | base64 --decode -o ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
           echo -n "$TUNNEL_PROFILE" | base64 --decode -o ~/Library/MobileDevice/Provisioning\ Profiles/tunnel.mobileprovision
 
+      - name: Setup App Store Connect API key
+        env:
+          API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          mkdir -p $HOME/private_keys
+          echo -n "$API_KEY_P8" | base64 --decode -o $HOME/private_keys/AuthKey_N68G775GA2.p8
+
       - name: Build archive
         run: |
           xcodebuild archive \
@@ -88,10 +95,7 @@ jobs:
         env:
           API_KEY_ID: N68G775GA2
           API_ISSUER_ID: 9aaa8cda-ed99-4624-b2aa-3b4c8b9e3245
-          API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
-          mkdir -p $HOME/private_keys
-          echo -n "$API_KEY_P8" | base64 --decode -o $HOME/private_keys/AuthKey_N68G775GA2.p8
           xcrun altool --upload-app \
             -f $RUNNER_TEMP/export/*.ipa \
             --type ios \
