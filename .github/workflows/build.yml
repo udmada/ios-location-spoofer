@@ -11,6 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select latest Xcode
+        run: |
+          ls /Applications/ | grep Xcode
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $LATEST_XCODE"
+          sudo xcode-select -s "$LATEST_XCODE"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -21,6 +30,56 @@ jobs:
           cd GoSpoofer
           chmod +x make.sh
           ./make.sh
+
+      - name: Generate app icons
+        run: |
+          # 创建一个 1024x1024 蓝色底图
+          python3 -c "
+          from PIL import Image
+          img = Image.new('RGB', (1024, 1024), color=(0, 122, 255))
+          img.save('/tmp/icon_1024.png')
+          " 2>/dev/null || convert -size 1024x1024 xc:'#007AFF' /tmp/icon_1024.png 2>/dev/null || {
+            # 如果都没有就用 sips 从空白图片裁剪
+            tiffutil -create /tmp/icon_1024.tiff -size 1024 1024 2>/dev/null
+            sips -s format png /tmp/icon_1024.tiff --out /tmp/icon_1024.png 2>/dev/null
+          }
+
+          # 如果上面都失败，用纯 Python 不依赖 PIL 生成 PNG
+          if [ ! -f /tmp/icon_1024.png ]; then
+            python3 << 'PYEOF'
+          import struct, zlib
+          def make_png(w, h, r, g, b):
+              def chunk(ctype, data):
+                  c = ctype + data
+                  return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+              raw = b''
+              for _ in range(h):
+                  raw += b'\x00' + bytes([r, g, b]) * w
+              return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
+          with open('/tmp/icon_1024.png', 'wb') as f:
+              f.write(make_png(1024, 1024, 0, 122, 255))
+          PYEOF
+          fi
+
+          ICON_DIR="AppIcon.icon"
+          mkdir -p "$ICON_DIR"
+          for size in 120 152 167 180 1024; do
+            sips -z $size $size /tmp/icon_1024.png --out "$ICON_DIR/icon_${size}x${size}.png" 2>/dev/null
+          done
+
+          # 写 Contents.json
+          cat > "$ICON_DIR/Contents.json" << 'ICONEOF'
+          {
+            "images": [
+              {"filename": "icon_120x120.png", "idiom": "iphone", "scale": "2x", "size": "60x60"},
+              {"filename": "icon_180x180.png", "idiom": "iphone", "scale": "3x", "size": "60x60"},
+              {"filename": "icon_152x152.png", "idiom": "ipad", "scale": "2x", "size": "76x76"},
+              {"filename": "icon_167x167.png", "idiom": "ipad", "scale": "2x", "size": "83.5x83.5"},
+              {"filename": "icon_1024x1024.png", "idiom": "ios-marketing", "scale": "1x", "size": "1024x1024"}
+            ],
+            "info": {"author": "xcode", "version": 1}
+          }
+          ICONEOF
 
       - name: Install Apple certificate
         env:
