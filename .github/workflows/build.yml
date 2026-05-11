@@ -55,7 +55,13 @@ jobs:
             -destination "generic/platform=iOS" \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=3MPFZ2L92C \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_N68G775GA2.p8 \
+            -authenticationKeyID N68G775GA2 \
+            -authenticationKeyIssuerID 9aaa8cda-ed99-4624-b2aa-3b4c8b9e3245 \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            APP_PROVISIONING_PROFILE="LocationSpoofer AppStore" \
+            TUNNEL_PROVISIONING_PROFILE="LocationSpoofer Tunnel AppStore"
 
       - name: Export IPA
         run: |

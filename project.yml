@@ -39,6 +39,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.whitemirror.location-spoofer
         INFOPLIST_FILE: Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: Resources/location-spoofer.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER: "LocationSpoofer AppStore"
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "$(inherited)"
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
@@ -70,6 +73,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.whitemirror.location-spoofer.tunnel
         INFOPLIST_FILE: Tunnel/Info.plist
         CODE_SIGN_ENTITLEMENTS: Tunnel/location-spoofer-tunnel.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER: "LocationSpoofer Tunnel AppStore"
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/Frameworks"
