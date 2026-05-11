@@ -47,7 +47,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func getSpoofedCoordinates() -> (latitude: Double?, longitude: Double?) {
-        let suiteName = "group.dev.duti.location-spoofer"
+        let suiteName = "group.com.whitemirror.location-spoofer"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             return (nil, nil)
         }

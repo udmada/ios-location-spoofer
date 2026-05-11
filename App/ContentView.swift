@@ -225,7 +225,7 @@ extension ContentView {
         manager.localizedDescription = "Location Spoofer"
         
         let proto = NETunnelProviderProtocol()
-        proto.providerBundleIdentifier = "dev.duti.location-spoofer.tunnel"
+        proto.providerBundleIdentifier = "com.whitemirror.location-spoofer.tunnel"
         proto.serverAddress = "127.0.0.1"
         proto.providerConfiguration = [:]
         

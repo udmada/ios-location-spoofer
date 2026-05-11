@@ -72,3 +72,6 @@ fastlane/test_output
 # Temporary files
 tmp/
 temp/
+
+# Signing material (keys, certs, profiles, base64 secrets)
+certs/

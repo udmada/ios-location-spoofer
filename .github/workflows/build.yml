@@ -1,0 +1,93 @@
+name: Build and Upload to TestFlight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build Go static library
+        run: |
+          cd GoSpoofer
+          chmod +x make.sh
+          ./make.sh
+
+      - name: Install Apple certificate
+        env:
+          CERTIFICATE_P12: ${{ secrets.CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH=$RUNNER_TEMP/cert.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          echo -n "$CERTIFICATE_P12" | base64 --decode -o $CERT_PATH
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          security import $CERT_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Install provisioning profiles
+        env:
+          APP_PROFILE: ${{ secrets.APP_PROVISIONING_PROFILE }}
+          TUNNEL_PROFILE: ${{ secrets.TUNNEL_PROVISIONING_PROFILE }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo -n "$APP_PROFILE" | base64 --decode -o ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
+          echo -n "$TUNNEL_PROFILE" | base64 --decode -o ~/Library/MobileDevice/Provisioning\ Profiles/tunnel.mobileprovision
+
+      - name: Build archive
+        run: |
+          xcodebuild archive \
+            -project location-spoofer.xcodeproj \
+            -scheme location-spoofer \
+            -archivePath $RUNNER_TEMP/LocationSpoofer.xcarchive \
+            -destination "generic/platform=iOS" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=3MPFZ2L92C \
+            -allowProvisioningUpdates
+
+      - name: Export IPA
+        run: |
+          cat > $RUNNER_TEMP/export.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>3MPFZ2L92C</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/LocationSpoofer.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/export.plist \
+            -exportPath $RUNNER_TEMP/export
+
+      - name: Upload to TestFlight
+        env:
+          API_KEY_ID: N68G775GA2
+          API_ISSUER_ID: 9aaa8cda-ed99-4624-b2aa-3b4c8b9e3245
+          API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$API_KEY_P8" | base64 --decode -o ~/private_keys/AuthKey_N68G775GA2.p8
+          xcrun altool --upload-app \
+            -f $RUNNER_TEMP/export/*.ipa \
+            --type ios \
+            --apiKey $API_KEY_ID \
+            --apiIssuer $API_ISSUER_ID
