@@ -81,6 +81,15 @@ jobs:
             <string>app-store-connect</string>
             <key>teamID</key>
             <string>3MPFZ2L92C</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.whitemirror.location-spoofer</key>
+              <string>LocationSpoofer AppStore</string>
+              <key>com.whitemirror.location-spoofer.tunnel</key>
+              <string>LocationSpoofer Tunnel AppStore</string>
+            </dict>
             <key>uploadSymbols</key>
             <true/>
           </dict>
@@ -89,7 +98,10 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/LocationSpoofer.xcarchive \
             -exportOptionsPlist $RUNNER_TEMP/export.plist \
-            -exportPath $RUNNER_TEMP/export
+            -exportPath $RUNNER_TEMP/export \
+            -authenticationKeyPath $HOME/private_keys/AuthKey_N68G775GA2.p8 \
+            -authenticationKeyID N68G775GA2 \
+            -authenticationKeyIssuerID 9aaa8cda-ed99-4624-b2aa-3b4c8b9e3245
 
       - name: Upload to TestFlight
         env:
