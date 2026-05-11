@@ -32,7 +32,6 @@ targets:
       - path: Resources
         excludes:
           - "**/.DS_Store"
-          - "Assets.xcassets"
       - path: AppIcon.icon
     settings:
       base:
