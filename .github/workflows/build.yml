@@ -31,48 +31,65 @@ jobs:
           chmod +x make.sh
           ./make.sh
 
-      - name: Generate app icons
+      - name: Install xcodegen and regenerate project
         run: |
-          # 用纯 Python 生成 PNG（不依赖任何第三方库）
+          brew install xcodegen
+          cd $GITHUB_WORKSPACE
+          xcodegen generate
+          # 重新应用 HACKS.md 的 patch：把 libgolocationspoofer.a 从 Resources build phase 移到 Frameworks build phase
+          # 检查 pbxproj 中 libgolocationspoofer.a 是否在 PBXResourcesBuildPhase 里，如果是就移到 PBXFrameworksBuildPhase
           python3 << 'PYEOF'
-          import struct, zlib, os
+          import re
 
-          def make_png(w, h, r, g, b):
-              def chunk(ctype, data):
-                  c = ctype + data
-                  return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
-              raw = b''
-              for _ in range(h):
-                  raw += b'\x00' + bytes([r, g, b]) * w
-              return (b'\x89PNG\r\n\x1a\n' +
-                      chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) +
-                      chunk(b'IDAT', zlib.compress(raw)) +
-                      chunk(b'IEND', b''))
+          with open("location-spoofer.xcodeproj/project.pbxproj", "r") as f:
+              content = f.read()
 
-          icon_dir = "Resources/Assets.xcassets/AppIcon.appiconset"
-          os.makedirs(icon_dir, exist_ok=True)
+          # 找到 libgolocationspoofer.a 的 PBXBuildFile 引用 ID
+          # 然后确保它在 Frameworks phase 而不是 Resources phase
+          lines = content.split("\n")
 
-          for size in [120, 152, 167, 180, 1024]:
-              with open(f"{icon_dir}/icon_{size}x{size}.png", "wb") as f:
-                  f.write(make_png(size, size, 0, 122, 255))
+          # 找到 libgolocationspoofer.a 的 file ref
+          lib_ref_id = None
+          lib_build_id = None
+          for line in lines:
+              if "libgolocationspoofer.a" in line and "PBXFileReference" not in line and "PBXBuildFile" in line:
+                  lib_build_id = line.strip().split(" ")[0]
+              if "libgolocationspoofer.a" in line and "PBXFileReference" in line:
+                  lib_ref_id = line.strip().split(" ")[0]
 
-          import json
-          contents = {
-              "images": [
-                  {"filename": "icon_120x120.png", "idiom": "iphone", "scale": "2x", "size": "60x60"},
-                  {"filename": "icon_180x180.png", "idiom": "iphone", "scale": "3x", "size": "60x60"},
-                  {"filename": "icon_152x152.png", "idiom": "ipad", "scale": "2x", "size": "76x76"},
-                  {"filename": "icon_167x167.png", "idiom": "ipad", "scale": "2x", "size": "83.5x83.5"},
-                  {"filename": "icon_1024x1024.png", "idiom": "ios-marketing", "scale": "1x", "size": "1024x1024"}
-              ],
-              "info": {"author": "xcode", "version": 1}
-          }
-          with open(f"{icon_dir}/Contents.json", "w") as f:
-              json.dump(contents, f, indent=2)
+          if lib_build_id:
+              # Remove from Resources phase and add to Frameworks phase
+              in_resources = False
+              in_frameworks = False
+              new_lines = []
+              resources_section = False
+              frameworks_section = False
 
-          print(f"Generated icons in {icon_dir}:")
-          for name in os.listdir(icon_dir):
-              print(f"  {name} ({os.path.getsize(os.path.join(icon_dir, name))} bytes)")
+              for i, line in enumerate(lines):
+                  if "/* Resources */" in line and "PBXResourcesBuildPhase" in line:
+                      resources_section = True
+                  if "/* Frameworks */" in line and "PBXFrameworksBuildPhase" in line:
+                      frameworks_section = True
+
+                  if resources_section and lib_build_id in line:
+                      resources_section = False
+                      continue  # skip this line (remove from resources)
+
+                  if frameworks_section and "files = (" in line:
+                      new_lines.append(line)
+                      # Check if lib is already in frameworks
+                      if lib_build_id not in content.split("/* Frameworks */")[1].split("/* End")[0] if "/* Frameworks */" in content else "":
+                          new_lines.append(f"\t\t\t\t{lib_build_id} /* libgolocationspoofer.a in Frameworks */,")
+                      frameworks_section = False
+                      continue
+
+                  new_lines.append(line)
+
+              with open("location-spoofer.xcodeproj/project.pbxproj", "w") as f:
+                  f.write("\n".join(new_lines))
+              print("HACKS.md patch applied")
+          else:
+              print("WARNING: libgolocationspoofer.a build ref not found, skipping patch")
           PYEOF
 
       - name: Install Apple certificate

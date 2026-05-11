@@ -32,7 +32,7 @@ targets:
       - path: Resources
         excludes:
           - "**/.DS_Store"
-      - path: AppIcon.icon
+      - path: Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.whitemirror.location-spoofer
