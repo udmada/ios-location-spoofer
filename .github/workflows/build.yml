@@ -56,7 +56,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=3MPFZ2L92C \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_N68G775GA2.p8 \
+            -authenticationKeyPath $HOME/private_keys/AuthKey_N68G775GA2.p8 \
             -authenticationKeyID N68G775GA2 \
             -authenticationKeyIssuerID 9aaa8cda-ed99-4624-b2aa-3b4c8b9e3245 \
             CODE_SIGN_IDENTITY="Apple Distribution" \
@@ -90,8 +90,8 @@ jobs:
           API_ISSUER_ID: 9aaa8cda-ed99-4624-b2aa-3b4c8b9e3245
           API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
-          mkdir -p ~/private_keys
-          echo -n "$API_KEY_P8" | base64 --decode -o ~/private_keys/AuthKey_N68G775GA2.p8
+          mkdir -p $HOME/private_keys
+          echo -n "$API_KEY_P8" | base64 --decode -o $HOME/private_keys/AuthKey_N68G775GA2.p8
           xcrun altool --upload-app \
             -f $RUNNER_TEMP/export/*.ipa \
             --type ios \
