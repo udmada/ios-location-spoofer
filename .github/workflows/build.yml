@@ -183,3 +183,9 @@ jobs:
             --type ios \
             --apiKey $API_KEY_ID \
             --apiIssuer $API_ISSUER_ID
+            - name: Upload IPA as Artifact
+              uses: actions/upload-artifact@v4
+              with:
+              name: GPS-Tool-IPA
+              path: ${{ runner.temp }}/export/*.ipa
+              retention-days: 30
