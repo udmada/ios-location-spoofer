@@ -148,10 +148,16 @@ struct VPNControlView: View {
     @State private var showStep4Tutorial = false
     @State private var showStep7Tutorial = false
 
+    @State private var firstSetupCompleted: Bool = UserDefaults.standard.bool(forKey: "firstSetupCompleted")
+
     private var isVPNConnected: Bool { vpnStatus == .connected }
 
     private var allSetupDone: Bool {
-        isVPNConnected && certDownloaded && certInstalled && certTrusted && locationSet && vpnRestarted && locationServiceRestarted
+        if firstSetupCompleted {
+            return isVPNConnected && locationSet && vpnRestarted && locationServiceRestarted
+        } else {
+            return isVPNConnected && certDownloaded && certInstalled && certTrusted && locationSet && vpnRestarted && locationServiceRestarted
+        }
     }
 
     var body: some View {
@@ -229,6 +235,7 @@ struct VPNControlView: View {
                     }
 
                     // 设置引导步骤
+                    if !firstSetupCompleted {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("设置引导")
                             .font(.headline)
@@ -390,6 +397,70 @@ struct VPNControlView: View {
                     .padding(12)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(10)
+                    } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("更改定位")
+                            .font(.headline)
+                            .padding(.bottom, 4)
+
+                        SetupStepView(
+                            stepNumber: 1, title: "连接 VPN", subtitle: "启用本地 VPN 拦截定位请求",
+                            isCompleted: isVPNConnected, isCurrent: !isVPNConnected
+                        )
+
+                        SetupStepView(
+                            stepNumber: 2, title: "选择新位置", subtitle: "在「位置」标签页搜索或点选",
+                            isCompleted: locationSet, isCurrent: isVPNConnected && !locationSet
+                        )
+
+                        Group {
+                            SetupStepView(
+                                stepNumber: 3, title: "重启 VPN", subtitle: "断开再重连使新定位生效",
+                                isCompleted: vpnRestarted, isCurrent: isVPNConnected && locationSet && !vpnRestarted
+                            )
+                            if isVPNConnected && locationSet && !vpnRestarted {
+                                Button(action: {
+                                    restartVPN()
+                                    vpnRestarted = true
+                                }) {
+                                    Text("重启 VPN")
+                                        .font(.caption).fontWeight(.medium)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                        .background(Color.blue.opacity(0.1))
+                                        .foregroundColor(.blue)
+                                        .cornerRadius(8)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+
+                        Group {
+                            SetupStepView(
+                                stepNumber: 4, title: "重启定位服务", subtitle: "关闭定位3秒后重新打开",
+                                isCompleted: locationServiceRestarted, isCurrent: vpnRestarted && !locationServiceRestarted
+                            )
+                            if vpnRestarted && !locationServiceRestarted {
+                                StepActionButtons(
+                                    showConfirm: showStep7Confirm,
+                                    confirmTitle: "我已完成",
+                                    retryTitle: showStep7Confirm ? "查看教程" : "操作指引",
+                                    onConfirm: {
+                                        locationServiceRestarted = true
+                                        showEffectiveAlert = true
+                                    },
+                                    onAction: {
+                                        showStep7Tutorial = true
+                                        showStep7Confirm = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+                    }
                 }
                 .padding()
             }
@@ -397,23 +468,33 @@ struct VPNControlView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 checkLocationSet()
-                needsVPNInstallation = (ContentView.vpnManager == nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    needsVPNInstallation = (ContentView.vpnManager == nil)
+                }
             }
             .alert("定位已生效", isPresented: $showEffectiveAlert) {
-                Button("确定") { }
+                Button("确定") {
+                    firstSetupCompleted = true
+                    UserDefaults.standard.set(true, forKey: "firstSetupCompleted")
+                }
             } message: {
                 Text("新定位已生效，请打开地图验证。")
             }
             .alert("请重启定位服务", isPresented: $showRestartLocationPrompt) {
-                Button("前往设置") {
-                    showStep7Tutorial = true
+                Button("查看教程") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        showStep7Tutorial = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showRestartLocationPrompt = true
+                    }
                 }
-                Button("已完成") {
+                Button("已完成重启") {
                     isRestoredLocation = true
                 }
                 Button("取消", role: .cancel) { }
             } message: {
-                Text("请关闭定位服务等待3秒后重新打开，以恢复真实定位。")
+                Text("请前往 设置>隐私与安全性>定位服务，关闭等待3秒后重新打开。")
             }
             .sheet(isPresented: $showStep3Tutorial) {
                 VStack(spacing: 20) {
