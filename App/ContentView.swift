@@ -241,10 +241,30 @@ struct VPNControlView: View {
                         Group {
                             // 步骤2
                             SetupStepView(
-                                stepNumber: 2, title: "下载描述文件", subtitle: "跳转Safari下载描述文件，点击允许",
+                                stepNumber: 2, title: "下载描述文件", subtitle: "自动跳转失败时，请复制下方地址到Safari打开",
                                 isCompleted: certDownloaded, isCurrent: isVPNConnected && !certDownloaded
                             )
                             if isVPNConnected && !certDownloaded {
+                                HStack {
+                                    Text("http://mitm.it")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                    Spacer()
+                                    Button(action: {
+                                        UIPasteboard.general.string = "http://mitm.it"
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "doc.on.doc")
+                                            Text("复制")
+                                        }
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                    }
+                                }
+                                .padding(8)
+                                .background(Color(UIColor.tertiarySystemBackground))
+                                .cornerRadius(6)
+
                                 StepActionButtons(
                                     showConfirm: showStep2Confirm,
                                     confirmTitle: "我已完成",
@@ -279,7 +299,7 @@ struct VPNControlView: View {
                                         UserDefaults.standard.set(true, forKey: "certInstalled")
                                     },
                                     onAction: {
-                                        if let url = URL(string: "App-Prefs:General&path=ManagedConfigurationList") {
+                                        if let url = URL(string: "prefs:root=General&path=ManagedConfigurationList") {
                                             UIApplication.shared.open(url)
                                         }
                                         showStep3Confirm = true
@@ -304,7 +324,7 @@ struct VPNControlView: View {
                                         UserDefaults.standard.set(true, forKey: "certTrusted")
                                     },
                                     onAction: {
-                                        if let url = URL(string: "App-Prefs:General&path=About") {
+                                        if let url = URL(string: "prefs:root=General&path=About/CERT_TRUST_SETTINGS") {
                                             UIApplication.shared.open(url)
                                         }
                                         showStep4Confirm = true
@@ -360,7 +380,7 @@ struct VPNControlView: View {
                                         showEffectiveAlert = true
                                     },
                                     onAction: {
-                                        if let url = URL(string: "App-Prefs:Privacy&path=LOCATION") {
+                                        if let url = URL(string: "prefs:root=Privacy&path=LOCATION") {
                                             UIApplication.shared.open(url)
                                         }
                                         showStep7Confirm = true
@@ -388,7 +408,7 @@ struct VPNControlView: View {
             }
             .alert("请重启定位服务", isPresented: $showRestartLocationPrompt) {
                 Button("前往设置") {
-                    if let url = URL(string: "App-Prefs:Privacy&path=LOCATION") {
+                    if let url = URL(string: "prefs:root=Privacy&path=LOCATION") {
                         UIApplication.shared.open(url)
                     }
                 }
