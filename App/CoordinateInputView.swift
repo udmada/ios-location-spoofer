@@ -205,7 +205,8 @@ struct CoordinateInputView: View {
 
     private func confirmLocation() {
         guard let pin = pin else { return }
-        locationConfig.setCoordinates(latitude: pin.latitude, longitude: pin.longitude)
+        let converted = CoordinateConverter.gcj02ToWgs84(lat: pin.latitude, lng: pin.longitude)
+        locationConfig.setCoordinates(latitude: converted.latitude, longitude: converted.longitude)
         currentLocationName = selectedName
         UserDefaults.standard.set(selectedName, forKey: "currentLocationName")
         showLocationSetAlert = true
