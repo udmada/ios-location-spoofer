@@ -213,7 +213,7 @@ struct VPNControlView: View {
                     .cornerRadius(10)
 
                     // 恢复真实定位
-                    if allSetupDone || isRestoredLocation {
+                    if locationSet && !isVPNConnected {
                         Button(action: { restoreRealLocation() }) {
                             HStack {
                                 Image(systemName: isRestoredLocation ? "checkmark.circle.fill" : "arrow.uturn.backward")

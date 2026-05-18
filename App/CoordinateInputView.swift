@@ -94,20 +94,6 @@ struct CoordinateInputView: View {
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(10)
 
-                    if currentLocationName != nil {
-                        Button(action: { restoreRealLocation() }) {
-                            HStack {
-                                Image(systemName: "arrow.uturn.backward")
-                                Text("恢复真实定位")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(Color.red.opacity(0.1))
-                            .foregroundColor(.red)
-                            .cornerRadius(10)
-                        }
-                    }
-
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("收藏地点")
@@ -223,13 +209,6 @@ struct CoordinateInputView: View {
         currentLocationName = selectedName
         UserDefaults.standard.set(selectedName, forKey: "currentLocationName")
         showLocationSetAlert = true
-    }
-
-    private func restoreRealLocation() {
-        locationConfig.clearCoordinates()
-        pin = nil
-        currentLocationName = nil
-        UserDefaults.standard.removeObject(forKey: "currentLocationName")
     }
 
     private func searchLocation() {
