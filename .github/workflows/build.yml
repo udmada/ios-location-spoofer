@@ -138,7 +138,8 @@ jobs:
             -authenticationKeyIssuerID 9aaa8cda-ed99-4624-b2aa-3b4c8b9e3245 \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             APP_PROVISIONING_PROFILE="LocationSpoofer AppStore" \
-            TUNNEL_PROVISIONING_PROFILE="LocationSpoofer Tunnel AppStore"
+            TUNNEL_PROVISIONING_PROFILE="LocationSpoofer Tunnel AppStore" \
+            CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER
 
       - name: Export IPA
         run: |
