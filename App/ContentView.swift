@@ -95,6 +95,7 @@ struct VPNControlView: View {
     @State private var certInstalled: Bool = UserDefaults.standard.bool(forKey: "certInstalled")
     @State private var certTrusted: Bool = UserDefaults.standard.bool(forKey: "certTrusted")
     @State private var locationSet: Bool = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private var isVPNConnected: Bool { vpnStatus == .connected }
 
@@ -173,7 +174,7 @@ struct VPNControlView: View {
                         )
 
                         SetupStepView(
-                            stepNumber: 2, title: "安装证书", subtitle: "在 Safari 中打开 mitm.it 安装证书",
+                            stepNumber: 2, title: "下载描述文件", subtitle: "跳转Safari下载描述文件，点击允许",
                             isCompleted: certInstalled, isCurrent: isVPNConnected && !certInstalled,
                             buttonTitle: "前往安装", action: {
                                 if let url = URL(string: "http://mitm.it") {
@@ -183,7 +184,7 @@ struct VPNControlView: View {
                         )
 
                         SetupStepView(
-                            stepNumber: 3, title: "信任证书", subtitle: "设置>通用>VPN与设备管理>点击Location Spoofer CA>安装",
+                            stepNumber: 3, title: "安装证书", subtitle: "设置>通用>VPN与设备管理>点击Location Spoofer CA>安装",
                             isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
                             buttonTitle: "前往设置", action: {
                                 if let url = URL(string: "App-Prefs:General") {
@@ -226,7 +227,7 @@ struct VPNControlView: View {
                                 certInstalled = true
                                 UserDefaults.standard.set(true, forKey: "certInstalled")
                             }) {
-                                Text("已完成证书安装")
+                                Text("已允许描述文件")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .frame(maxWidth: .infinity)
@@ -273,6 +274,12 @@ struct VPNControlView: View {
             .onAppear {
                 checkLocationSet()
                 needsVPNInstallation = (ContentView.vpnManager == nil)
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    checkLocationSet()
+                    needsVPNInstallation = (ContentView.vpnManager == nil)
+                }
             }
         }
     }
