@@ -74,7 +74,7 @@ struct VPNControlView: View {
                     .imageScale(.large)
                     .foregroundStyle(.tint)
                 
-                Text("位置伪装器")
+                Text("任意门")
                     .font(.title2)
                     .fontWeight(.semibold)
 
@@ -123,7 +123,7 @@ struct VPNControlView: View {
                 Spacer()
             }
             .padding()
-            .navigationTitle("位置伪装器")
+            .navigationTitle("任意门")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -222,7 +222,7 @@ extension ContentView {
     
     private func makeManager() -> NETunnelProviderManager {
         let manager = NETunnelProviderManager()
-        manager.localizedDescription = "Location Spoofer"
+        manager.localizedDescription = "任意门"
         
         let proto = NETunnelProviderProtocol()
         proto.providerBundleIdentifier = "com.whitemirror.location-spoofer.tunnel"

@@ -19,6 +19,9 @@ struct CoordinateInputView: View {
     var body: some View {
         NavigationView {
             Form {
+                // 地图选点
+                MapPickerView(latitude: $latitudeText, longitude: $longitudeText)
+
                 Section {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 8) {
