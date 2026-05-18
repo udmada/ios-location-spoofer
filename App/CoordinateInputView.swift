@@ -1,226 +1,290 @@
-//
-//  CoordinateInputView.swift
-//  location-spoofer
-//
-//  View for entering coordinates to spoof location
-//
-
 import SwiftUI
-import UIKit
+import MapKit
+
+struct SavedLocation: Codable, Identifiable {
+    let id: UUID
+    var name: String
+    var latitude: Double
+    var longitude: Double
+    init(name: String, latitude: Double, longitude: Double) {
+        self.id = UUID()
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+}
 
 struct CoordinateInputView: View {
-    @StateObject private var locationConfig = LocationConfiguration.shared
-    @State private var latitudeText: String = ""
-    @State private var longitudeText: String = ""
-    @State private var showingPresetLocations = false
-    @State private var saveError: String?
+    @State private var locationConfig = LocationConfiguration.shared
+    @State private var searchText = ""
+    @State private var region = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
+        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+    )
+    @State private var pin: CLLocationCoordinate2D? = nil
+    @State private var selectedName = ""
+    @State private var showingConfirm = false
+    @State private var showingAddFavorite = false
+    @State private var favoriteName = ""
+    @State private var savedLocations: [SavedLocation] = []
+    @State private var currentLocationName: String? = nil
     @State private var showingSaveAlert = false
-    
+    @State private var saveError: String? = nil
+    private let savedLocationsKey = "savedLocations"
+
     var body: some View {
         NavigationView {
-            Form {
-                // 地图选点
-                MapPickerView(latitude: $latitudeText, longitude: $longitudeText)
-
-                Section {
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("纬度")
-                                .font(.headline)
-
-                            TextField("例如：40.7128", text: $latitudeText)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .keyboardType(.decimalPad)
-                                .onChange(of: latitudeText) { _, newValue in
-                                    validateAndSave()
-                                }
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("经度")
-                                .font(.headline)
-
-                            TextField("例如：-74.0060", text: $longitudeText)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .keyboardType(.decimalPad)
-                                .onChange(of: longitudeText) { _, newValue in
-                                    validateAndSave()
-                                }
+            ScrollView {
+                VStack(spacing: 16) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                        TextField("搜索地名，如：杭州西湖", text: $searchText)
+                            .onSubmit { searchLocation() }
+                        if !searchText.isEmpty {
+                            Button(action: { searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
-                } header: {
-                    Text("目标坐标")
-                } footer: {
-                    Text("输入你想伪装到的纬度和经度。有效范围：纬度 -90 到 90，经度 -180 到 180。")
-                }
-                
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if let coords = locationConfig.currentCoordinates {
+                    .padding(12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+
+                    MapReader { proxy in
+                        Map(position: .constant(.region(region))) {
+                            if let pin = pin {
+                                Marker("目标位置", coordinate: pin)
+                                    .tint(.red)
+                            }
+                        }
+                        .onTapGesture { position in
+                            if let coordinate = proxy.convert(position, from: .local) {
+                                selectLocation(coordinate: coordinate, name: nil)
+                            }
+                        }
+                    }
+                    .frame(height: 280)
+                    .cornerRadius(12)
+
+                    VStack(spacing: 8) {
+                        if let name = currentLocationName {
                             HStack {
-                                Text("当前设置：")
+                                Image(systemName: "location.fill")
+                                    .foregroundColor(.green)
+                                Text("当前定位：\(name)")
+                                    .font(.body)
+                                    .fontWeight(.medium)
+                                Spacer()
+                            }
+                        } else {
+                            HStack {
+                                Image(systemName: "location.slash")
+                                    .foregroundColor(.secondary)
+                                Text("尚未设置定位")
+                                    .font(.body)
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Text(String(format: "%.6f, %.6f", coords.latitude, coords.longitude))
-                                    .font(.system(.body, design: .monospaced))
                             }
-                            .padding(.vertical, 8)
-                            
-                            Button("清除坐标") {
-                                clearCoordinates()
+                        }
+                    }
+                    .padding(12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+
+                    if currentLocationName != nil {
+                        Button(action: { restoreRealLocation() }) {
+                            HStack {
+                                Image(systemName: "arrow.uturn.backward")
+                                Text("恢复真实定位")
                             }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(Color.red.opacity(0.1))
                             .foregroundColor(.red)
-                        } else {
-                            Text("尚未配置坐标")
-                                .foregroundColor(.secondary)
-                                .italic()
+                            .cornerRadius(10)
                         }
                     }
-                } header: {
-                    Text("状态")
-                }
-                
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("常用地点")
-                            .font(.headline)
 
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 12) {
-                            PresetLocationButton(name: "纽约", lat: 40.7128, lon: -74.0060, onTap: { lat, lon in
-                                setCoordinates(lat: lat, lon: lon)
-                            })
-
-                            PresetLocationButton(name: "伦敦", lat: 51.5074, lon: -0.1278, onTap: { lat, lon in
-                                setCoordinates(lat: lat, lon: lon)
-                            })
-
-                            PresetLocationButton(name: "东京", lat: 35.6762, lon: 139.6503, onTap: { lat, lon in
-                                setCoordinates(lat: lat, lon: lon)
-                            })
-
-                            PresetLocationButton(name: "悉尼", lat: -33.8688, lon: 151.2093, onTap: { lat, lon in
-                                setCoordinates(lat: lat, lon: lon)
-                            })
-
-                            PresetLocationButton(name: "巴黎", lat: 48.8566, lon: 2.3522, onTap: { lat, lon in
-                                setCoordinates(lat: lat, lon: lon)
-                            })
-
-                            PresetLocationButton(name: "洛杉矶", lat: 34.0522, lon: -118.2437, onTap: { lat, lon in
-                                setCoordinates(lat: lat, lon: lon)
-                            })
-                        }
-                    }
-                } header: {
-                    Text("快捷预设")
-                } footer: {
-                    Text("点击任意预设即可快速设置对应坐标。更改需重启 VPN 后才会生效。")
-                }
-                
-                Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("安装指南")
+                        HStack {
+                            Text("收藏地点")
+                                .font(.headline)
+                            Spacer()
+                            Button(action: { showingAddFavorite = true }) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.title3)
+                            }
+                        }
+                        if savedLocations.isEmpty {
+                            Text("暂无收藏，点击 + 添加常用地点")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.vertical, 4)
+                        } else {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 10) {
+                                ForEach(savedLocations) { loc in
+                                    Button(action: {
+                                        let coord = CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude)
+                                        selectLocation(coordinate: coord, name: loc.name)
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "mappin.circle.fill")
+                                                .foregroundColor(.blue)
+                                            Text(loc.name)
+                                                .font(.subheadline)
+                                                .lineLimit(1)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .padding(.horizontal, 12)
+                                        .background(Color(UIColor.tertiarySystemBackground))
+                                        .cornerRadius(8)
+                                    }
+                                    .foregroundColor(.primary)
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            deleteFavorite(loc)
+                                        } label: {
+                                            Label("删除", systemImage: "trash")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("使用说明")
                             .font(.headline)
-                        
-                        Text("使用位置伪装的步骤：")
-                            .font(.subheadline)
-                        
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("1. 在 VPN 标签页中启用 VPN")
-                            Text("2. 在 Safari 中访问 mitm.it")
-                            Text("3. 安装 CA 证书")
-                            Text("4. 在 设置 > 通用 > VPN与设备管理 中信任该证书")
-                            Text("5. 重启 VPN 连接")
+                            Text("1. 在 VPN 页面启用 VPN")
+                            Text("2. 在 Safari 中访问 mitm.it 安装证书")
+                            Text("3. 在 设置>通用>VPN与设备管理 中信任证书")
+                            Text("4. 在 设置>通用>关于本机>证书信任设置 中开启信任")
+                            Text("5. 搜索或点选地图设置目标位置")
+                            Text("6. 重启 VPN 使定位生效")
                         }
                         .font(.caption)
                         .foregroundColor(.secondary)
                     }
-                } header: {
-                    Text("设置说明")
+                    .padding(12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
                 }
+                .padding()
             }
             .navigationTitle("位置设置")
-            .onAppear {
-                loadCurrentCoordinates()
+            .navigationBarTitleDisplayMode(.inline)
+            .alert("确认设置定位", isPresented: $showingConfirm) {
+                Button("确定") { confirmLocation() }
+                Button("取消", role: .cancel) { }
+            } message: {
+                Text("将定位设置为：\(selectedName)")
+            }
+            .alert("添加收藏", isPresented: $showingAddFavorite) {
+                TextField("地点名称", text: $favoriteName)
+                Button("保存") { addCurrentAsFavorite() }
+                Button("取消", role: .cancel) { favoriteName = "" }
+            } message: {
+                Text("为当前选中的位置命名")
             }
             .alert("保存错误", isPresented: $showingSaveAlert) {
                 Button("确定") {}
             } message: {
                 Text(saveError ?? "保存坐标失败")
             }
+            .onAppear {
+                loadSavedLocations()
+                loadCurrentLocation()
+            }
         }
     }
-    
-    private func loadCurrentCoordinates() {
-        if let coords = locationConfig.currentCoordinates {
-            latitudeText = String(format: "%.6f", coords.latitude)
-            longitudeText = String(format: "%.6f", coords.longitude)
+
+    private func selectLocation(coordinate: CLLocationCoordinate2D, name: String?) {
+        pin = coordinate
+        region.center = coordinate
+        if let name = name {
+            selectedName = name
+            showingConfirm = true
+        } else {
+            let geocoder = CLGeocoder()
+            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            geocoder.reverseGeocodeLocation(location) { placemarks, error in
+                if let placemark = placemarks?.first {
+                    let components = [placemark.locality, placemark.subLocality, placemark.name].compactMap { $0 }
+                    selectedName = components.joined(separator: " ")
+                    if selectedName.isEmpty {
+                        selectedName = String(format: "%.4f, %.4f", coordinate.latitude, coordinate.longitude)
+                    }
+                } else {
+                    selectedName = String(format: "%.4f, %.4f", coordinate.latitude, coordinate.longitude)
+                }
+                showingConfirm = true
+            }
         }
     }
-    
-    private func setCoordinates(lat: Double, lon: Double) {
-        latitudeText = String(format: "%.6f", lat)
-        longitudeText = String(format: "%.6f", lon)
-        validateAndSave()
+
+    private func confirmLocation() {
+        guard let pin = pin else { return }
+        locationConfig.setCoordinates(latitude: pin.latitude, longitude: pin.longitude)
+        currentLocationName = selectedName
+        UserDefaults.standard.set(selectedName, forKey: "currentLocationName")
     }
-    
-    private func clearCoordinates() {
-        latitudeText = ""
-        longitudeText = ""
+
+    private func restoreRealLocation() {
         locationConfig.clearCoordinates()
+        pin = nil
+        currentLocationName = nil
+        UserDefaults.standard.removeObject(forKey: "currentLocationName")
     }
-    
-    private func validateAndSave() {
-        guard let lat = Double(latitudeText), let lon = Double(longitudeText) else {
-            if !latitudeText.isEmpty || !longitudeText.isEmpty {
-                saveError = "请输入有效的坐标"
-                showingSaveAlert = true
-            }
-            return
-        }
-        
-        guard lat >= -90 && lat <= 90 else {
-            saveError = "纬度必须在 -90 到 90 之间"
-            showingSaveAlert = true
-            return
-        }
-        
-        guard lon >= -180 && lon <= 180 else {
-            saveError = "经度必须在 -180 到 180 之间"
-            showingSaveAlert = true
-            return
-        }
-        
-        locationConfig.setCoordinates(latitude: lat, longitude: lon)
-    }
-}
 
-struct PresetLocationButton: View {
-    let name: String
-    let lat: Double
-    let lon: Double
-    let onTap: (Double, Double) -> Void
-    
-    var body: some View {
-        Button {
-            onTap(lat, lon)
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "mappin.circle.fill")
-                    .font(.title2)
-                Text(name)
-                    .font(.caption)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(8)
+    private func searchLocation() {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = searchText
+        let search = MKLocalSearch(request: request)
+        search.start { response, error in
+            guard let response = response, let item = response.mapItems.first else { return }
+            let coord = item.placemark.coordinate
+            selectLocation(coordinate: coord, name: item.name ?? searchText)
         }
-        .buttonStyle(.plain)
     }
-}
 
-#Preview {
-    CoordinateInputView()
+    private func loadSavedLocations() {
+        if let data = UserDefaults.standard.data(forKey: savedLocationsKey),
+           let locations = try? JSONDecoder().decode([SavedLocation].self, from: data) {
+            savedLocations = locations
+        }
+    }
+
+    private func saveFavorites() {
+        if let data = try? JSONEncoder().encode(savedLocations) {
+            UserDefaults.standard.set(data, forKey: savedLocationsKey)
+        }
+    }
+
+    private func addCurrentAsFavorite() {
+        guard let pin = pin, !favoriteName.isEmpty else { return }
+        let loc = SavedLocation(name: favoriteName, latitude: pin.latitude, longitude: pin.longitude)
+        savedLocations.append(loc)
+        saveFavorites()
+        favoriteName = ""
+    }
+
+    private func deleteFavorite(_ location: SavedLocation) {
+        savedLocations.removeAll { $0.id == location.id }
+        saveFavorites()
+    }
+
+    private func loadCurrentLocation() {
+        currentLocationName = UserDefaults.standard.string(forKey: "currentLocationName")
+        if let coords = locationConfig.currentCoordinates {
+            pin = CLLocationCoordinate2D(latitude: coords.latitude, longitude: coords.longitude)
+            region.center = pin!
+        }
+    }
 }
