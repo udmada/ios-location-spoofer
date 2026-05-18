@@ -75,3 +75,4 @@ temp/
 
 # Signing material (keys, certs, profiles, base64 secrets)
 certs/
+new_icon.png
