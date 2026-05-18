@@ -11,8 +11,8 @@ struct ContentView: View {
         TabView {
             VPNControlView(vpnStatus: $vpnStatus, showingInstallationAlert: $showingInstallationAlert, installationError: $installationError)
                 .tabItem {
-                    Image(systemName: "network")
-                    Text("VPN")
+                    Image(systemName: "house.fill")
+                    Text("主页")
                 }
                 .tag(0)
             CoordinateInputView()
@@ -39,8 +39,6 @@ struct SetupStepView: View {
     let subtitle: String
     let isCompleted: Bool
     let isCurrent: Bool
-    let buttonTitle: String?
-    let action: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -68,21 +66,54 @@ struct SetupStepView: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
-            if let buttonTitle = buttonTitle, isCurrent, let action = action {
-                Button(action: action) {
-                    Text(buttonTitle)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(6)
-                }
-            }
         }
         .padding(.vertical, 6)
         .opacity(isCompleted ? 0.7 : 1.0)
+    }
+}
+
+struct StepActionButtons: View {
+    let showConfirm: Bool
+    let confirmTitle: String
+    let retryTitle: String
+    let onConfirm: () -> Void
+    let onAction: () -> Void
+
+    var body: some View {
+        if showConfirm {
+            HStack(spacing: 8) {
+                Button(action: onConfirm) {
+                    Text(confirmTitle)
+                        .font(.caption).fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.green.opacity(0.1))
+                        .foregroundColor(.green)
+                        .cornerRadius(8)
+                }
+                Button(action: onAction) {
+                    Text(retryTitle)
+                        .font(.caption).fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(8)
+                }
+            }
+            .padding(.vertical, 4)
+        } else {
+            Button(action: onAction) {
+                Text(retryTitle)
+                    .font(.caption).fontWeight(.medium)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.1))
+                    .foregroundColor(.blue)
+                    .cornerRadius(8)
+            }
+            .padding(.vertical, 4)
+        }
     }
 }
 
@@ -92,16 +123,31 @@ struct VPNControlView: View {
     @Binding var installationError: String?
     @State private var isConnecting = false
     @State private var needsVPNInstallation = false
-    @State private var certInstalled: Bool = UserDefaults.standard.bool(forKey: "certInstalled")
-    @State private var certTrusted: Bool = UserDefaults.standard.bool(forKey: "certTrusted")
-    @State private var locationSet: Bool = false
+
     @State private var showStep2Confirm = false
-    @State private var showStep34Confirm = false
+    @State private var certDownloaded: Bool = UserDefaults.standard.bool(forKey: "certDownloaded")
+
+    @State private var showStep3Confirm = false
+    @State private var certInstalled: Bool = UserDefaults.standard.bool(forKey: "certInstalled")
+
+    @State private var showStep4Confirm = false
+    @State private var certTrusted: Bool = UserDefaults.standard.bool(forKey: "certTrusted")
+
+    @State private var locationSet: Bool = false
+
+    @State private var vpnRestarted = false
+
+    @State private var showStep7Confirm = false
+    @State private var locationServiceRestarted = false
+
+    @State private var showEffectiveAlert = false
+    @State private var showRestartLocationPrompt = false
+    @State private var isRestoredLocation = false
 
     private var isVPNConnected: Bool { vpnStatus == .connected }
 
     private var allSetupDone: Bool {
-        isVPNConnected && certInstalled && certTrusted && locationSet
+        isVPNConnected && certDownloaded && certInstalled && certTrusted && locationSet && vpnRestarted && locationServiceRestarted
     }
 
     var body: some View {
@@ -110,15 +156,15 @@ struct VPNControlView: View {
                 VStack(spacing: 16) {
                     // 状态横幅
                     HStack {
-                        Image(systemName: allSetupDone ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundColor(allSetupDone ? .green : .orange)
-                        Text(allSetupDone ? "定位已生效" : "定位尚未生效")
+                        Image(systemName: allSetupDone ? "checkmark.circle.fill" : (isRestoredLocation ? "arrow.uturn.backward.circle.fill" : "exclamationmark.triangle.fill"))
+                            .foregroundColor(allSetupDone ? .green : (isRestoredLocation ? .blue : .orange))
+                        Text(allSetupDone ? "定位已生效" : (isRestoredLocation ? "已恢复真实定位" : "定位尚未生效"))
                             .font(.subheadline)
                             .fontWeight(.medium)
                         Spacer()
                     }
                     .padding(12)
-                    .background(allSetupDone ? Color.green.opacity(0.1) : Color.orange.opacity(0.1))
+                    .background(allSetupDone ? Color.green.opacity(0.1) : (isRestoredLocation ? Color.blue.opacity(0.1) : Color.orange.opacity(0.1)))
                     .cornerRadius(10)
 
                     // VPN 连接卡片
@@ -162,137 +208,131 @@ struct VPNControlView: View {
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(10)
 
+                    // 恢复真实定位
+                    if allSetupDone || isRestoredLocation {
+                        Button(action: { restoreRealLocation() }) {
+                            HStack {
+                                Image(systemName: isRestoredLocation ? "checkmark.circle.fill" : "arrow.uturn.backward")
+                                Text(isRestoredLocation ? "已恢复真实定位" : "恢复真实定位")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(isRestoredLocation ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+                            .foregroundColor(isRestoredLocation ? .green : .red)
+                            .cornerRadius(10)
+                        }
+                        .disabled(isRestoredLocation)
+                    }
+
                     // 设置引导步骤
                     VStack(alignment: .leading, spacing: 4) {
                         Text("设置引导")
                             .font(.headline)
                             .padding(.bottom, 4)
 
-                        SetupStepView(
-                            stepNumber: 1, title: "连接 VPN", subtitle: "启用本地 VPN 拦截定位请求",
-                            isCompleted: isVPNConnected, isCurrent: !isVPNConnected,
-                            buttonTitle: nil, action: nil
-                        )
+                        Group {
+                            // 步骤1
+                            SetupStepView(
+                                stepNumber: 1, title: "连接 VPN", subtitle: "启用本地 VPN 拦截定位请求",
+                                isCompleted: isVPNConnected, isCurrent: !isVPNConnected
+                            )
+                        }
 
-                        SetupStepView(
-                            stepNumber: 2, title: "下载描述文件", subtitle: "跳转Safari下载描述文件，点击允许",
-                            isCompleted: certInstalled, isCurrent: isVPNConnected && !certInstalled,
-                            buttonTitle: nil, action: {
-                                if let url = URL(string: "http://mitm.it") {
-                                    UIApplication.shared.open(url)
-                                }
-                            }
-                        )
-
-                        // 步骤2确认
-                        if isVPNConnected && !certInstalled {
-                            if showStep2Confirm {
-                                HStack(spacing: 8) {
-                                    Button(action: {
-                                        certInstalled = true
-                                        UserDefaults.standard.set(true, forKey: "certInstalled")
-                                    }) {
-                                        Text("已允许描述文件")
-                                            .font(.caption).fontWeight(.medium)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 8)
-                                            .background(Color.green.opacity(0.1))
-                                            .foregroundColor(.green)
-                                            .cornerRadius(8)
-                                    }
-                                    Button(action: {
+                        Group {
+                            // 步骤2
+                            SetupStepView(
+                                stepNumber: 2, title: "下载描述文件", subtitle: "跳转Safari下载描述文件，点击允许",
+                                isCompleted: certDownloaded, isCurrent: isVPNConnected && !certDownloaded
+                            )
+                            if isVPNConnected && !certDownloaded {
+                                StepActionButtons(
+                                    showConfirm: showStep2Confirm,
+                                    confirmTitle: "我已完成",
+                                    retryTitle: showStep2Confirm ? "再次下载" : "前往下载",
+                                    onConfirm: {
+                                        certDownloaded = true
+                                        UserDefaults.standard.set(true, forKey: "certDownloaded")
+                                    },
+                                    onAction: {
                                         if let url = URL(string: "http://mitm.it") {
                                             UIApplication.shared.open(url)
                                         }
-                                    }) {
-                                        Text("再次前往")
-                                            .font(.caption).fontWeight(.medium)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 8)
-                                            .background(Color.blue.opacity(0.1))
-                                            .foregroundColor(.blue)
-                                            .cornerRadius(8)
+                                        showStep2Confirm = true
                                     }
-                                }
-                                .padding(.vertical, 4)
-                            } else {
-                                Button(action: {
-                                    if let url = URL(string: "http://mitm.it") {
-                                        UIApplication.shared.open(url)
-                                    }
-                                    showStep2Confirm = true
-                                }) {
-                                    Text("前往下载")
-                                        .font(.caption).fontWeight(.medium)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
-                                        .background(Color.blue.opacity(0.1))
-                                        .foregroundColor(.blue)
-                                        .cornerRadius(8)
-                                }
-                                .padding(.vertical, 4)
+                                )
                             }
                         }
 
-                        SetupStepView(
-                            stepNumber: 3, title: "安装证书", subtitle: "设置>通用>VPN与设备管理>点击Location Spoofer CA>安装",
-                            isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
-                            buttonTitle: nil, action: {
-                                if let url = URL(string: "App-Prefs:General") {
-                                    UIApplication.shared.open(url)
-                                }
-                            }
-                        )
-
-                        SetupStepView(
-                            stepNumber: 4, title: "开启证书信任", subtitle: "设置>通用>关于本机>证书信任设置>开启Location Spoofer CA",
-                            isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
-                            buttonTitle: nil, action: {
-                                if let url = URL(string: "App-Prefs:General") {
-                                    UIApplication.shared.open(url)
-                                }
-                            }
-                        )
-
-                        // 步骤3和4确认
-                        if isVPNConnected && certInstalled && !certTrusted {
-                            if showStep34Confirm {
-                                HStack(spacing: 8) {
-                                    Button(action: {
-                                        certTrusted = true
-                                        UserDefaults.standard.set(true, forKey: "certTrusted")
-                                    }) {
-                                        Text("已完成信任设置")
-                                            .font(.caption).fontWeight(.medium)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 8)
-                                            .background(Color.green.opacity(0.1))
-                                            .foregroundColor(.green)
-                                            .cornerRadius(8)
-                                    }
-                                    Button(action: {
-                                        if let url = URL(string: "App-Prefs:General") {
+                        Group {
+                            // 步骤3
+                            SetupStepView(
+                                stepNumber: 3, title: "安装证书", subtitle: "设置>通用>VPN与设备管理>点击Location Spoofer CA>安装",
+                                isCompleted: certInstalled, isCurrent: isVPNConnected && certDownloaded && !certInstalled
+                            )
+                            if isVPNConnected && certDownloaded && !certInstalled {
+                                StepActionButtons(
+                                    showConfirm: showStep3Confirm,
+                                    confirmTitle: "我已完成",
+                                    retryTitle: showStep3Confirm ? "再次前往" : "前往设置",
+                                    onConfirm: {
+                                        certInstalled = true
+                                        UserDefaults.standard.set(true, forKey: "certInstalled")
+                                    },
+                                    onAction: {
+                                        if let url = URL(string: "App-Prefs:General&path=ManagedConfigurationList") {
                                             UIApplication.shared.open(url)
                                         }
-                                    }) {
-                                        Text("再次前往设置")
-                                            .font(.caption).fontWeight(.medium)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 8)
-                                            .background(Color.blue.opacity(0.1))
-                                            .foregroundColor(.blue)
-                                            .cornerRadius(8)
+                                        showStep3Confirm = true
                                     }
-                                }
-                                .padding(.vertical, 4)
-                            } else {
+                                )
+                            }
+                        }
+
+                        Group {
+                            // 步骤4
+                            SetupStepView(
+                                stepNumber: 4, title: "开启证书信任", subtitle: "设置>通用>关于本机>证书信任设置>开启Location Spoofer CA",
+                                isCompleted: certTrusted, isCurrent: isVPNConnected && certDownloaded && certInstalled && !certTrusted
+                            )
+                            if isVPNConnected && certDownloaded && certInstalled && !certTrusted {
+                                StepActionButtons(
+                                    showConfirm: showStep4Confirm,
+                                    confirmTitle: "我已完成",
+                                    retryTitle: showStep4Confirm ? "再次前往" : "前往设置",
+                                    onConfirm: {
+                                        certTrusted = true
+                                        UserDefaults.standard.set(true, forKey: "certTrusted")
+                                    },
+                                    onAction: {
+                                        if let url = URL(string: "App-Prefs:General&path=About") {
+                                            UIApplication.shared.open(url)
+                                        }
+                                        showStep4Confirm = true
+                                    }
+                                )
+                            }
+                        }
+
+                        Group {
+                            // 步骤5
+                            SetupStepView(
+                                stepNumber: 5, title: "选择目标位置", subtitle: "在「位置」标签页搜索或点选",
+                                isCompleted: locationSet, isCurrent: isVPNConnected && certDownloaded && certInstalled && certTrusted && !locationSet
+                            )
+                        }
+
+                        Group {
+                            // 步骤6
+                            SetupStepView(
+                                stepNumber: 6, title: "重启 VPN", subtitle: "断开再重连使新定位生效",
+                                isCompleted: vpnRestarted, isCurrent: isVPNConnected && certDownloaded && certInstalled && certTrusted && locationSet && !vpnRestarted
+                            )
+                            if isVPNConnected && certDownloaded && certInstalled && certTrusted && locationSet && !vpnRestarted {
                                 Button(action: {
-                                    if let url = URL(string: "App-Prefs:General") {
-                                        UIApplication.shared.open(url)
-                                    }
-                                    showStep34Confirm = true
+                                    restartVPN()
+                                    vpnRestarted = true
                                 }) {
-                                    Text("前往设置")
+                                    Text("重启 VPN")
                                         .font(.caption).fontWeight(.medium)
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 8)
@@ -304,29 +344,30 @@ struct VPNControlView: View {
                             }
                         }
 
-                        SetupStepView(
-                            stepNumber: 5, title: "选择目标位置", subtitle: "在「位置」标签页搜索或点选",
-                            isCompleted: locationSet, isCurrent: isVPNConnected && certInstalled && certTrusted && !locationSet,
-                            buttonTitle: nil, action: nil
-                        )
-
-                        SetupStepView(
-                            stepNumber: 6, title: "重启 VPN", subtitle: "断开再重连使新定位生效",
-                            isCompleted: false, isCurrent: isVPNConnected && certInstalled && certTrusted && locationSet,
-                            buttonTitle: "重启 VPN", action: {
-                                restartVPN()
+                        Group {
+                            // 步骤7
+                            SetupStepView(
+                                stepNumber: 7, title: "重启定位服务", subtitle: "关闭定位3秒后重新打开",
+                                isCompleted: locationServiceRestarted, isCurrent: vpnRestarted && !locationServiceRestarted
+                            )
+                            if vpnRestarted && !locationServiceRestarted {
+                                StepActionButtons(
+                                    showConfirm: showStep7Confirm,
+                                    confirmTitle: "我已完成",
+                                    retryTitle: showStep7Confirm ? "再次前往" : "前往设置",
+                                    onConfirm: {
+                                        locationServiceRestarted = true
+                                        showEffectiveAlert = true
+                                    },
+                                    onAction: {
+                                        if let url = URL(string: "App-Prefs:Privacy&path=LOCATION") {
+                                            UIApplication.shared.open(url)
+                                        }
+                                        showStep7Confirm = true
+                                    }
+                                )
                             }
-                        )
-
-                        SetupStepView(
-                            stepNumber: 7, title: "重启定位服务", subtitle: "关闭定位3秒后重新打开",
-                            isCompleted: false, isCurrent: false,
-                            buttonTitle: "前往设置", action: {
-                                if let url = URL(string: "App-Prefs:Privacy&path=LOCATION") {
-                                    UIApplication.shared.open(url)
-                                }
-                            }
-                        )
+                        }
                     }
                     .padding(12)
                     .background(Color(UIColor.secondarySystemBackground))
@@ -339,6 +380,24 @@ struct VPNControlView: View {
             .onAppear {
                 checkLocationSet()
                 needsVPNInstallation = (ContentView.vpnManager == nil)
+            }
+            .alert("定位已生效", isPresented: $showEffectiveAlert) {
+                Button("确定") { }
+            } message: {
+                Text("新定位已生效，请打开地图验证。")
+            }
+            .alert("请重启定位服务", isPresented: $showRestartLocationPrompt) {
+                Button("前往设置") {
+                    if let url = URL(string: "App-Prefs:Privacy&path=LOCATION") {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                Button("已完成") {
+                    isRestoredLocation = true
+                }
+                Button("取消", role: .cancel) { }
+            } message: {
+                Text("请关闭定位服务等待3秒后重新打开，以恢复真实定位。")
             }
         }
     }
@@ -377,6 +436,15 @@ struct VPNControlView: View {
                 os_log("VPN restart failed: %{public}@", error.localizedDescription)
             }
         }
+    }
+
+    private func restoreRealLocation() {
+        LocationConfiguration.shared.clearCoordinates()
+        UserDefaults.standard.removeObject(forKey: "currentLocationName")
+        locationSet = false
+        vpnRestarted = false
+        locationServiceRestarted = false
+        showRestartLocationPrompt = true
     }
 }
 

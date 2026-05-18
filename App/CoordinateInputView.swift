@@ -30,6 +30,7 @@ struct CoordinateInputView: View {
     @State private var currentLocationName: String? = nil
     @State private var showingSaveAlert = false
     @State private var saveError: String? = nil
+    @State private var showLocationSetAlert = false
     private let savedLocationsKey = "savedLocations"
 
     var body: some View {
@@ -157,24 +158,6 @@ struct CoordinateInputView: View {
                     .padding(12)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(10)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("使用说明")
-                            .font(.headline)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("1. 在 VPN 页面启用 VPN")
-                            Text("2. 在 Safari 中访问 mitm.it 安装证书")
-                            Text("3. 在 设置>通用>VPN与设备管理 中信任证书")
-                            Text("4. 在 设置>通用>关于本机>证书信任设置 中开启信任")
-                            Text("5. 搜索或点选地图设置目标位置")
-                            Text("6. 重启 VPN 使定位生效")
-                        }
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    }
-                    .padding(12)
-                    .background(Color(UIColor.secondarySystemBackground))
-                    .cornerRadius(10)
                 }
                 .padding()
             }
@@ -197,6 +180,11 @@ struct CoordinateInputView: View {
                 Button("确定") {}
             } message: {
                 Text(saveError ?? "保存坐标失败")
+            }
+            .alert("目标位置已设置", isPresented: $showLocationSetAlert) {
+                Button("确定") { }
+            } message: {
+                Text("已将定位设置为：\(selectedName)。请回到「主页」按引导重启 VPN，使新定位生效。")
             }
             .onAppear {
                 loadSavedLocations()
@@ -234,6 +222,7 @@ struct CoordinateInputView: View {
         locationConfig.setCoordinates(latitude: pin.latitude, longitude: pin.longitude)
         currentLocationName = selectedName
         UserDefaults.standard.set(selectedName, forKey: "currentLocationName")
+        showLocationSetAlert = true
     }
 
     private func restoreRealLocation() {
