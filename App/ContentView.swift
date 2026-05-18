@@ -144,6 +144,10 @@ struct VPNControlView: View {
     @State private var showRestartLocationPrompt = false
     @State private var isRestoredLocation = false
 
+    @State private var showStep3Tutorial = false
+    @State private var showStep4Tutorial = false
+    @State private var showStep7Tutorial = false
+
     private var isVPNConnected: Bool { vpnStatus == .connected }
 
     private var allSetupDone: Bool {
@@ -241,7 +245,7 @@ struct VPNControlView: View {
                         Group {
                             // 步骤2
                             SetupStepView(
-                                stepNumber: 2, title: "下载描述文件", subtitle: "自动跳转失败时，请复制下方地址到Safari打开",
+                                stepNumber: 2, title: "下载描述文件", subtitle: "跳转网页后如未弹出配置文件下载，请复制下方地址到Safari重试",
                                 isCompleted: certDownloaded, isCurrent: isVPNConnected && !certDownloaded
                             )
                             if isVPNConnected && !certDownloaded {
@@ -299,9 +303,7 @@ struct VPNControlView: View {
                                         UserDefaults.standard.set(true, forKey: "certInstalled")
                                     },
                                     onAction: {
-                                        if let url = URL(string: "prefs:root=General&path=ManagedConfigurationList") {
-                                            UIApplication.shared.open(url)
-                                        }
+                                        showStep3Tutorial = true
                                         showStep3Confirm = true
                                     }
                                 )
@@ -324,9 +326,7 @@ struct VPNControlView: View {
                                         UserDefaults.standard.set(true, forKey: "certTrusted")
                                     },
                                     onAction: {
-                                        if let url = URL(string: "prefs:root=General&path=About/CERT_TRUST_SETTINGS") {
-                                            UIApplication.shared.open(url)
-                                        }
+                                        showStep4Tutorial = true
                                         showStep4Confirm = true
                                     }
                                 )
@@ -380,9 +380,7 @@ struct VPNControlView: View {
                                         showEffectiveAlert = true
                                     },
                                     onAction: {
-                                        if let url = URL(string: "prefs:root=Privacy&path=LOCATION") {
-                                            UIApplication.shared.open(url)
-                                        }
+                                        showStep7Tutorial = true
                                         showStep7Confirm = true
                                     }
                                 )
@@ -408,9 +406,7 @@ struct VPNControlView: View {
             }
             .alert("请重启定位服务", isPresented: $showRestartLocationPrompt) {
                 Button("前往设置") {
-                    if let url = URL(string: "prefs:root=Privacy&path=LOCATION") {
-                        UIApplication.shared.open(url)
-                    }
+                    showStep7Tutorial = true
                 }
                 Button("已完成") {
                     isRestoredLocation = true
@@ -418,6 +414,98 @@ struct VPNControlView: View {
                 Button("取消", role: .cancel) { }
             } message: {
                 Text("请关闭定位服务等待3秒后重新打开，以恢复真实定位。")
+            }
+            .sheet(isPresented: $showStep3Tutorial) {
+                VStack(spacing: 20) {
+                    Text("安装证书教程")
+                        .font(.title2).fontWeight(.bold)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("① 打开 iPhone「设置」")
+                            .font(.title3)
+                        Text("② 点击「通用」")
+                            .font(.title3)
+                        Text("③ 点击「VPN与设备管理」")
+                            .font(.title3)
+                        Text("④ 找到「Location Spoofer CA」点击进入")
+                            .font(.title3)
+                        Text("⑤ 点击右上角「安装」")
+                            .font(.title3)
+                        Text("⑥ 输入手机密码确认安装")
+                            .font(.title3)
+                    }
+                    .padding()
+                    Spacer()
+                    Button("我知道了") { showStep3Tutorial = false }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+                .padding(24)
+            }
+            .sheet(isPresented: $showStep4Tutorial) {
+                VStack(spacing: 20) {
+                    Text("开启证书信任教程")
+                        .font(.title2).fontWeight(.bold)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("① 打开 iPhone「设置」")
+                            .font(.title3)
+                        Text("② 点击「通用」")
+                            .font(.title3)
+                        Text("③ 点击「关于本机」")
+                            .font(.title3)
+                        Text("④ 滑到最底部，点击「证书信任设置」")
+                            .font(.title3)
+                        Text("⑤ 找到「Location Spoofer CA」")
+                            .font(.title3)
+                        Text("⑥ 打开右侧开关（变绿色）")
+                            .font(.title3)
+                        Text("⑦ 弹窗点击「继续」确认")
+                            .font(.title3)
+                    }
+                    .padding()
+                    Spacer()
+                    Button("我知道了") { showStep4Tutorial = false }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+                .padding(24)
+            }
+            .sheet(isPresented: $showStep7Tutorial) {
+                VStack(spacing: 20) {
+                    Text("重启定位服务教程")
+                        .font(.title2).fontWeight(.bold)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("① 打开 iPhone「设置」")
+                            .font(.title3)
+                        Text("② 点击「隐私与安全性」")
+                            .font(.title3)
+                        Text("③ 点击「定位服务」")
+                            .font(.title3)
+                        Text("④ 关闭「定位服务」开关")
+                            .font(.title3)
+                        Text("⑤ 等待 3 秒")
+                            .font(.title3).foregroundColor(.red)
+                        Text("⑥ 重新打开「定位服务」开关")
+                            .font(.title3)
+                    }
+                    .padding()
+                    Spacer()
+                    Button("我知道了") { showStep7Tutorial = false }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+                .padding(24)
             }
         }
     }
