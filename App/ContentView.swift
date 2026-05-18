@@ -183,7 +183,7 @@ struct VPNControlView: View {
                         )
 
                         SetupStepView(
-                            stepNumber: 3, title: "信任证书", subtitle: "设置 > 通用 > VPN与设备管理",
+                            stepNumber: 3, title: "信任证书", subtitle: "设置>通用>VPN与设备管理>点击Location Spoofer CA>安装",
                             isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
                             buttonTitle: "前往设置", action: {
                                 if let url = URL(string: "App-Prefs:General") {
@@ -193,7 +193,7 @@ struct VPNControlView: View {
                         )
 
                         SetupStepView(
-                            stepNumber: 4, title: "开启证书信任", subtitle: "设置 > 通用 > 关于本机 > 证书信任设置",
+                            stepNumber: 4, title: "开启证书信任", subtitle: "设置>通用>关于本机>证书信任设置>开启Location Spoofer CA",
                             isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
                             buttonTitle: "前往设置", action: {
                                 if let url = URL(string: "App-Prefs:General") {
