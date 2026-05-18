@@ -95,7 +95,8 @@ struct VPNControlView: View {
     @State private var certInstalled: Bool = UserDefaults.standard.bool(forKey: "certInstalled")
     @State private var certTrusted: Bool = UserDefaults.standard.bool(forKey: "certTrusted")
     @State private var locationSet: Bool = false
-    @Environment(\.scenePhase) private var scenePhase
+    @State private var showStep2Confirm = false
+    @State private var showStep34Confirm = false
 
     private var isVPNConnected: Bool { vpnStatus == .connected }
 
@@ -176,7 +177,7 @@ struct VPNControlView: View {
                         SetupStepView(
                             stepNumber: 2, title: "下载描述文件", subtitle: "跳转Safari下载描述文件，点击允许",
                             isCompleted: certInstalled, isCurrent: isVPNConnected && !certInstalled,
-                            buttonTitle: "前往安装", action: {
+                            buttonTitle: nil, action: {
                                 if let url = URL(string: "http://mitm.it") {
                                     UIApplication.shared.open(url)
                                 }
@@ -185,26 +186,58 @@ struct VPNControlView: View {
 
                         // 步骤2确认
                         if isVPNConnected && !certInstalled {
-                            Button(action: {
-                                certInstalled = true
-                                UserDefaults.standard.set(true, forKey: "certInstalled")
-                            }) {
-                                Text("已允许描述文件")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(Color.green.opacity(0.1))
-                                    .foregroundColor(.green)
-                                    .cornerRadius(8)
+                            if showStep2Confirm {
+                                HStack(spacing: 8) {
+                                    Button(action: {
+                                        certInstalled = true
+                                        UserDefaults.standard.set(true, forKey: "certInstalled")
+                                    }) {
+                                        Text("已允许描述文件")
+                                            .font(.caption).fontWeight(.medium)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(Color.green.opacity(0.1))
+                                            .foregroundColor(.green)
+                                            .cornerRadius(8)
+                                    }
+                                    Button(action: {
+                                        if let url = URL(string: "http://mitm.it") {
+                                            UIApplication.shared.open(url)
+                                        }
+                                    }) {
+                                        Text("再次前往")
+                                            .font(.caption).fontWeight(.medium)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(Color.blue.opacity(0.1))
+                                            .foregroundColor(.blue)
+                                            .cornerRadius(8)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            } else {
+                                Button(action: {
+                                    if let url = URL(string: "http://mitm.it") {
+                                        UIApplication.shared.open(url)
+                                    }
+                                    showStep2Confirm = true
+                                }) {
+                                    Text("前往下载")
+                                        .font(.caption).fontWeight(.medium)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                        .background(Color.blue.opacity(0.1))
+                                        .foregroundColor(.blue)
+                                        .cornerRadius(8)
+                                }
+                                .padding(.vertical, 4)
                             }
-                            .padding(.vertical, 4)
                         }
 
                         SetupStepView(
                             stepNumber: 3, title: "安装证书", subtitle: "设置>通用>VPN与设备管理>点击Location Spoofer CA>安装",
                             isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
-                            buttonTitle: "前往设置", action: {
+                            buttonTitle: nil, action: {
                                 if let url = URL(string: "App-Prefs:General") {
                                     UIApplication.shared.open(url)
                                 }
@@ -214,29 +247,61 @@ struct VPNControlView: View {
                         SetupStepView(
                             stepNumber: 4, title: "开启证书信任", subtitle: "设置>通用>关于本机>证书信任设置>开启Location Spoofer CA",
                             isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
-                            buttonTitle: "前往设置", action: {
+                            buttonTitle: nil, action: {
                                 if let url = URL(string: "App-Prefs:General") {
                                     UIApplication.shared.open(url)
                                 }
                             }
                         )
 
-                        // 步骤3和4合并确认
+                        // 步骤3和4确认
                         if isVPNConnected && certInstalled && !certTrusted {
-                            Button(action: {
-                                certTrusted = true
-                                UserDefaults.standard.set(true, forKey: "certTrusted")
-                            }) {
-                                Text("已完成证书信任设置")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(Color.green.opacity(0.1))
-                                    .foregroundColor(.green)
-                                    .cornerRadius(8)
+                            if showStep34Confirm {
+                                HStack(spacing: 8) {
+                                    Button(action: {
+                                        certTrusted = true
+                                        UserDefaults.standard.set(true, forKey: "certTrusted")
+                                    }) {
+                                        Text("已完成信任设置")
+                                            .font(.caption).fontWeight(.medium)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(Color.green.opacity(0.1))
+                                            .foregroundColor(.green)
+                                            .cornerRadius(8)
+                                    }
+                                    Button(action: {
+                                        if let url = URL(string: "App-Prefs:General") {
+                                            UIApplication.shared.open(url)
+                                        }
+                                    }) {
+                                        Text("再次前往设置")
+                                            .font(.caption).fontWeight(.medium)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(Color.blue.opacity(0.1))
+                                            .foregroundColor(.blue)
+                                            .cornerRadius(8)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            } else {
+                                Button(action: {
+                                    if let url = URL(string: "App-Prefs:General") {
+                                        UIApplication.shared.open(url)
+                                    }
+                                    showStep34Confirm = true
+                                }) {
+                                    Text("前往设置")
+                                        .font(.caption).fontWeight(.medium)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                        .background(Color.blue.opacity(0.1))
+                                        .foregroundColor(.blue)
+                                        .cornerRadius(8)
+                                }
+                                .padding(.vertical, 4)
                             }
-                            .padding(.vertical, 4)
                         }
 
                         SetupStepView(
@@ -274,12 +339,6 @@ struct VPNControlView: View {
             .onAppear {
                 checkLocationSet()
                 needsVPNInstallation = (ContentView.vpnManager == nil)
-            }
-            .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
-                    checkLocationSet()
-                    needsVPNInstallation = (ContentView.vpnManager == nil)
-                }
             }
         }
     }
