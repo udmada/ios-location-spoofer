@@ -22,22 +22,22 @@ struct CoordinateInputView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Latitude")
+                            Text("纬度")
                                 .font(.headline)
-                            
-                            TextField("e.g., 40.7128", text: $latitudeText)
+
+                            TextField("例如：40.7128", text: $latitudeText)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .keyboardType(.decimalPad)
                                 .onChange(of: latitudeText) { _, newValue in
                                     validateAndSave()
                                 }
                         }
-                        
+
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Longitude")
+                            Text("经度")
                                 .font(.headline)
-                            
-                            TextField("e.g., -74.0060", text: $longitudeText)
+
+                            TextField("例如：-74.0060", text: $longitudeText)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .keyboardType(.decimalPad)
                                 .onChange(of: longitudeText) { _, newValue in
@@ -46,16 +46,16 @@ struct CoordinateInputView: View {
                         }
                     }
                 } header: {
-                    Text("Target Coordinates")
+                    Text("目标坐标")
                 } footer: {
-                    Text("Enter the latitude and longitude you want to spoof your location to. Valid range: Latitude -90 to 90, Longitude -180 to 180.")
+                    Text("输入你想伪装到的纬度和经度。有效范围：纬度 -90 到 90，经度 -180 到 180。")
                 }
                 
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
                         if let coords = locationConfig.currentCoordinates {
                             HStack {
-                                Text("Current Settings:")
+                                Text("当前设置：")
                                     .foregroundColor(.secondary)
                                 Spacer()
                                 Text(String(format: "%.6f, %.6f", coords.latitude, coords.longitude))
@@ -63,87 +63,87 @@ struct CoordinateInputView: View {
                             }
                             .padding(.vertical, 8)
                             
-                            Button("Clear Coordinates") {
+                            Button("清除坐标") {
                                 clearCoordinates()
                             }
                             .foregroundColor(.red)
                         } else {
-                            Text("No coordinates configured")
+                            Text("尚未配置坐标")
                                 .foregroundColor(.secondary)
                                 .italic()
                         }
                     }
                 } header: {
-                    Text("Status")
+                    Text("状态")
                 }
                 
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Common Locations")
+                        Text("常用地点")
                             .font(.headline)
-                        
+
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 12) {
-                            PresetLocationButton(name: "New York", lat: 40.7128, lon: -74.0060, onTap: { lat, lon in
+                            PresetLocationButton(name: "纽约", lat: 40.7128, lon: -74.0060, onTap: { lat, lon in
                                 setCoordinates(lat: lat, lon: lon)
                             })
-                            
-                            PresetLocationButton(name: "London", lat: 51.5074, lon: -0.1278, onTap: { lat, lon in
+
+                            PresetLocationButton(name: "伦敦", lat: 51.5074, lon: -0.1278, onTap: { lat, lon in
                                 setCoordinates(lat: lat, lon: lon)
                             })
-                            
-                            PresetLocationButton(name: "Tokyo", lat: 35.6762, lon: 139.6503, onTap: { lat, lon in
+
+                            PresetLocationButton(name: "东京", lat: 35.6762, lon: 139.6503, onTap: { lat, lon in
                                 setCoordinates(lat: lat, lon: lon)
                             })
-                            
-                            PresetLocationButton(name: "Sydney", lat: -33.8688, lon: 151.2093, onTap: { lat, lon in
+
+                            PresetLocationButton(name: "悉尼", lat: -33.8688, lon: 151.2093, onTap: { lat, lon in
                                 setCoordinates(lat: lat, lon: lon)
                             })
-                            
-                            PresetLocationButton(name: "Paris", lat: 48.8566, lon: 2.3522, onTap: { lat, lon in
+
+                            PresetLocationButton(name: "巴黎", lat: 48.8566, lon: 2.3522, onTap: { lat, lon in
                                 setCoordinates(lat: lat, lon: lon)
                             })
-                            
-                            PresetLocationButton(name: "Los Angeles", lat: 34.0522, lon: -118.2437, onTap: { lat, lon in
+
+                            PresetLocationButton(name: "洛杉矶", lat: 34.0522, lon: -118.2437, onTap: { lat, lon in
                                 setCoordinates(lat: lat, lon: lon)
                             })
                         }
                     }
                 } header: {
-                    Text("Quick Presets")
+                    Text("快捷预设")
                 } footer: {
-                    Text("Tap any preset to quickly set those coordinates. Your VPN must be restarted for changes to take effect.")
+                    Text("点击任意预设即可快速设置对应坐标。更改需重启 VPN 后才会生效。")
                 }
                 
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Installation Guide")
+                        Text("安装指南")
                             .font(.headline)
                         
-                        Text("To use location spoofing:")
+                        Text("使用位置伪装的步骤：")
                             .font(.subheadline)
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("1. Enable the VPN from the VPN tab")
-                            Text("2. Visit mitm.it in Safari")
-                            Text("3. Install the CA certificate")
-                            Text("4. Trust the certificate in Settings > General > VPN & Device Management")
-                            Text("5. Restart the VPN connection")
+                            Text("1. 在 VPN 标签页中启用 VPN")
+                            Text("2. 在 Safari 中访问 mitm.it")
+                            Text("3. 安装 CA 证书")
+                            Text("4. 在 设置 > 通用 > VPN与设备管理 中信任该证书")
+                            Text("5. 重启 VPN 连接")
                         }
                         .font(.caption)
                         .foregroundColor(.secondary)
                     }
                 } header: {
-                    Text("Setup Instructions")
+                    Text("设置说明")
                 }
             }
-            .navigationTitle("Location Settings")
+            .navigationTitle("位置设置")
             .onAppear {
                 loadCurrentCoordinates()
             }
-            .alert("Save Error", isPresented: $showingSaveAlert) {
-                Button("OK") {}
+            .alert("保存错误", isPresented: $showingSaveAlert) {
+                Button("确定") {}
             } message: {
-                Text(saveError ?? "Failed to save coordinates")
+                Text(saveError ?? "保存坐标失败")
             }
         }
     }
@@ -170,20 +170,20 @@ struct CoordinateInputView: View {
     private func validateAndSave() {
         guard let lat = Double(latitudeText), let lon = Double(longitudeText) else {
             if !latitudeText.isEmpty || !longitudeText.isEmpty {
-                saveError = "Please enter valid coordinates"
+                saveError = "请输入有效的坐标"
                 showingSaveAlert = true
             }
             return
         }
         
         guard lat >= -90 && lat <= 90 else {
-            saveError = "Latitude must be between -90 and 90"
+            saveError = "纬度必须在 -90 到 90 之间"
             showingSaveAlert = true
             return
         }
         
         guard lon >= -180 && lon <= 180 else {
-            saveError = "Longitude must be between -180 and 180"
+            saveError = "经度必须在 -180 到 180 之间"
             showingSaveAlert = true
             return
         }

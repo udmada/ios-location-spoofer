@@ -40,17 +40,17 @@ struct ContentView: View {
             CoordinateInputView()
                 .tabItem {
                     Image(systemName: "location.fill")
-                    Text("Location")
+                    Text("位置")
                 }
                 .tag(1)
         }
         .onAppear {
             loadVPNConfiguration()
         }
-        .alert("VPN Installation", isPresented: $showingInstallationAlert) {
-            Button("OK", role: .cancel) { }
+        .alert("VPN 安装", isPresented: $showingInstallationAlert) {
+            Button("确定", role: .cancel) { }
         } message: {
-            Text(installationError ?? "Failed to install VPN profile")
+            Text(installationError ?? "VPN 配置安装失败")
         }
     }
 }
@@ -74,21 +74,21 @@ struct VPNControlView: View {
                     .imageScale(.large)
                     .foregroundStyle(.tint)
                 
-                Text("Location Spoofer")
+                Text("位置伪装器")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
+
                 VStack(spacing: 12) {
                     HStack {
                         Circle()
                             .fill(statusColor)
                             .frame(width: 12, height: 12)
-                        Text("VPN Status: \(statusText)")
+                        Text("VPN 状态：\(statusText)")
                             .font(.body)
                     }
-                    
+
                     if needsVPNInstallation {
-                        Button("Install VPN Profile") {
+                        Button("安装 VPN 配置") {
                             installVPNProfile()
                         }
                         .frame(maxWidth: .infinity)
@@ -102,7 +102,7 @@ struct VPNControlView: View {
                                     ProgressView()
                                         .scaleEffect(0.8)
                                 }
-                                Text(vpnStatus == .connected ? "Disconnect" : "Connect")
+                                Text(vpnStatus == .connected ? "断开" : "连接")
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
@@ -115,15 +115,15 @@ struct VPNControlView: View {
                 .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
                 
-                Text("When connected, this app will intercept Apple location services requests and spoof them to your configured coordinates.")
+                Text("连接后，本应用将拦截 Apple 定位服务请求并伪装到你设定的坐标。")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                
+
                 Spacer()
             }
             .padding()
-            .navigationTitle("Location Spoofer")
+            .navigationTitle("位置伪装器")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -141,12 +141,12 @@ struct VPNControlView: View {
     
     private var statusText: String {
         switch vpnStatus {
-        case .connected: return "Connected"
-        case .connecting: return "Connecting"
-        case .disconnecting: return "Disconnecting"
-        case .disconnected: return "Disconnected"
-        case .invalid: return needsVPNInstallation ? "Installation Required" : "Not Configured"
-        @unknown default: return "Unknown"
+        case .connected: return "已连接"
+        case .connecting: return "连接中"
+        case .disconnecting: return "断开中"
+        case .disconnected: return "未连接"
+        case .invalid: return needsVPNInstallation ? "需要安装" : "未配置"
+        @unknown default: return "未知"
         }
     }
 }
@@ -197,7 +197,7 @@ extension ContentView {
             if let error = error {
                 DispatchQueue.main.async {
                     self.isConnecting = false
-                    self.installationError = "Failed to install VPN profile: \(error.localizedDescription)"
+                    self.installationError = "VPN 配置安装失败：\(error.localizedDescription)"
                     self.showingInstallationAlert = true
                 }
                 return
