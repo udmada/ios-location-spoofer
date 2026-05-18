@@ -183,6 +183,24 @@ struct VPNControlView: View {
                             }
                         )
 
+                        // 步骤2确认
+                        if isVPNConnected && !certInstalled {
+                            Button(action: {
+                                certInstalled = true
+                                UserDefaults.standard.set(true, forKey: "certInstalled")
+                            }) {
+                                Text("已允许描述文件")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(Color.green.opacity(0.1))
+                                    .foregroundColor(.green)
+                                    .cornerRadius(8)
+                            }
+                            .padding(.vertical, 4)
+                        }
+
                         SetupStepView(
                             stepNumber: 3, title: "安装证书", subtitle: "设置>通用>VPN与设备管理>点击Location Spoofer CA>安装",
                             isCompleted: certTrusted, isCurrent: isVPNConnected && certInstalled && !certTrusted,
@@ -210,24 +228,6 @@ struct VPNControlView: View {
                                 UserDefaults.standard.set(true, forKey: "certTrusted")
                             }) {
                                 Text("已完成证书信任设置")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(Color.green.opacity(0.1))
-                                    .foregroundColor(.green)
-                                    .cornerRadius(8)
-                            }
-                            .padding(.vertical, 4)
-                        }
-
-                        // 步骤2确认
-                        if isVPNConnected && !certInstalled {
-                            Button(action: {
-                                certInstalled = true
-                                UserDefaults.standard.set(true, forKey: "certInstalled")
-                            }) {
-                                Text("已允许描述文件")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .frame(maxWidth: .infinity)
