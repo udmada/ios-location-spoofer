@@ -303,8 +303,9 @@ struct FirstSetupView: View {
     }
 
     private func confirmTrust() {
-        // D3 实现
-        // 临时占位:直接跳到完成页
+        // 手动确认信任(iOS 没有完美的"检测证书是否被信任"API)
+        UserDefaults.standard.set(true, forKey: "certInstalled")
+        UserDefaults.standard.set(true, forKey: "certTrusted")
         currentStep = .done
     }
 
