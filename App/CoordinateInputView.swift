@@ -15,6 +15,7 @@ struct SavedLocation: Codable, Identifiable {
 }
 
 struct CoordinateInputView: View {
+    var onLocationConfirmed: (() -> Void)? = nil
     @State private var locationConfig = LocationConfiguration.shared
     @State private var searchText = ""
     @State private var region = MKCoordinateRegion(
@@ -210,6 +211,7 @@ struct CoordinateInputView: View {
         currentLocationName = selectedName
         UserDefaults.standard.set(selectedName, forKey: "currentLocationName")
         showLocationSetAlert = true
+        onLocationConfirmed?()
     }
 
     private func searchLocation() {

@@ -184,6 +184,7 @@ struct VPNControlView: View {
     @State private var certTrusted: Bool = UserDefaults.standard.bool(forKey: "certTrusted")
 
     @State private var locationSet: Bool = false
+    @State private var showLocationPicker = false
 
     @State private var vpnRestarted = false
     @State private var vpnRestarting = false
@@ -429,9 +430,23 @@ struct VPNControlView: View {
                         Group {
                             // 步骤5
                             SetupStepView(
-                                stepNumber: 5, title: "选择目标位置", subtitle: "在「位置」标签页搜索或点选",
+                                stepNumber: 5, title: "选择目标位置", subtitle: "点击下方按钮打开地图选点",
                                 isCompleted: locationSet, isCurrent: isVPNConnected && certDownloaded && certInstalled && certTrusted && !locationSet
                             )
+                            if isVPNConnected && certDownloaded && certInstalled && certTrusted && !locationSet {
+                                Button(action: { showLocationPicker = true }) {
+                                    HStack {
+                                        Image(systemName: "map.fill")
+                                        Text("打开地图选择位置")
+                                            .fontWeight(.semibold)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(10)
+                                }
+                            }
                         }
 
                         Group {
@@ -495,9 +510,23 @@ struct VPNControlView: View {
                         )
 
                         SetupStepView(
-                            stepNumber: 2, title: "选择新位置", subtitle: "在「位置」标签页搜索或点选",
+                            stepNumber: 2, title: "选择新位置", subtitle: "点击下方按钮打开地图选点",
                             isCompleted: locationSet, isCurrent: isVPNConnected && !locationSet
                         )
+                        if isVPNConnected && !locationSet {
+                            Button(action: { showLocationPicker = true }) {
+                                HStack {
+                                    Image(systemName: "map.fill")
+                                    Text("打开地图选择位置")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                            }
+                        }
 
                         Group {
                             SetupStepView(
@@ -682,6 +711,13 @@ struct VPNControlView: View {
                         .cornerRadius(12)
                 }
                 .padding(24)
+            }
+            .sheet(isPresented: $showLocationPicker) {
+                CoordinateInputView(onLocationConfirmed: {
+                    // 同步 locationSet 状态
+                    locationSet = UserDefaults.standard.string(forKey: "currentLocationName") != nil
+                    showLocationPicker = false
+                })
             }
         }
     }
