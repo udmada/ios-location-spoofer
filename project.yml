@@ -2,7 +2,7 @@ name: location-spoofer
 options:
   bundleIdPrefix: com.whitemirror.location-spoofer
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
 
