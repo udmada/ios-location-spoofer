@@ -39,8 +39,8 @@ struct MapHomeView: View {
                     }
                 }
                 .ignoresSafeArea()
-                .onTapGesture { tapLocation in
-                    if let coordinate = proxy.convert(tapLocation, from: .local) {
+                .onTapGesture(coordinateSpace: .global) { tapLocation in
+                    if let coordinate = proxy.convert(tapLocation, from: .global) {
                         selectCoordinate(coordinate)
                     }
                 }
