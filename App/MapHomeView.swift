@@ -25,6 +25,8 @@ struct MapHomeView: View {
     @State private var currentLocationName: String = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
     @State private var vpnConnected: Bool = false
     @State private var vpnStatus: NEVPNStatus = .invalid
+    @State private var savedLocations: [SavedLocation] = []
+    @State private var showFavoritesSheet = false
 
     private var isSpoofing: Bool {
         !currentLocationName.isEmpty && vpnConnected
@@ -105,8 +107,12 @@ struct MapHomeView: View {
         .sheet(isPresented: $showRestartPhoneGuide) {
             disableRestartGuide
         }
+        .sheet(isPresented: $showFavoritesSheet) {
+            favoritesSheet
+        }
         .onAppear {
             refreshVPNStatus()
+            loadSavedLocations()
             NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { _ in
                 refreshVPNStatus()
             }
@@ -167,23 +173,34 @@ struct MapHomeView: View {
 
     private var searchBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
-            TextField("搜索地点或点击地图选择", text: $searchText)
-                .textFieldStyle(.plain)
-                .submitLabel(.search)
-                .onSubmit { performSearch() }
-            if !searchText.isEmpty {
-                Button(action: { searchText = "" }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("搜索地点或点击地图选择", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .submitLabel(.search)
+                    .onSubmit { performSearch() }
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(.regularMaterial)
+            .cornerRadius(12)
+
+            Button(action: { showFavoritesSheet = true }) {
+                Image(systemName: "star.fill")
+                    .font(.title3)
+                    .foregroundColor(.yellow)
+                    .padding(12)
+                    .background(.regularMaterial)
+                    .clipShape(Circle())
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.regularMaterial)
-        .cornerRadius(12)
         .padding(.horizontal, 12)
         .padding(.bottom, 24)
     }
@@ -219,14 +236,26 @@ struct MapHomeView: View {
 
             Spacer()
 
-            Button(action: { setAsLocation() }) {
-                Text("设为我的定位")
-                    .fontWeight(.semibold)
+            HStack(spacing: 12) {
+                Button(action: { addCurrentSelectionToFavorites() }) {
+                    HStack {
+                        Image(systemName: "star")
+                        Text("收藏")
+                    }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
+                    .background(Color(UIColor.tertiarySystemBackground))
                     .cornerRadius(12)
+                }
+                Button(action: { setAsLocation() }) {
+                    Text("设为定位")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
             }
         }
         .padding()
@@ -291,6 +320,46 @@ struct MapHomeView: View {
             .cornerRadius(12)
         }
         .padding(24)
+    }
+
+    private var favoritesSheet: some View {
+        NavigationView {
+            List {
+                if savedLocations.isEmpty {
+                    Text("还没有收藏的位置")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(savedLocations) { saved in
+                        Button(action: { selectFavorite(saved) }) {
+                            HStack {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundColor(.red)
+                                VStack(alignment: .leading) {
+                                    Text(saved.name)
+                                        .foregroundColor(.primary)
+                                    Text(String(format: "%.4f, %.4f", saved.latitude, saved.longitude))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                        }
+                    }
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            deleteFavorite(savedLocations[index])
+                        }
+                    }
+                }
+            }
+            .navigationTitle("收藏的位置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { showFavoritesSheet = false }
+                }
+            }
+        }
     }
 
     // MARK: - 动作
@@ -397,6 +466,52 @@ struct MapHomeView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             showRestartPhoneGuide = true
         }
+    }
+
+    private func loadSavedLocations() {
+        if let data = UserDefaults.standard.data(forKey: "savedLocations"),
+           let decoded = try? JSONDecoder().decode([SavedLocation].self, from: data) {
+            savedLocations = decoded
+        }
+    }
+
+    private func saveSavedLocations() {
+        if let encoded = try? JSONEncoder().encode(savedLocations) {
+            UserDefaults.standard.set(encoded, forKey: "savedLocations")
+        }
+    }
+
+    private func addCurrentSelectionToFavorites() {
+        guard let coord = selectedCoordinate,
+              let name = selectedLocationName else { return }
+        // 避免重复
+        if savedLocations.contains(where: { $0.name == name }) { return }
+        let new = SavedLocation(
+            name: name,
+            latitude: coord.latitude,
+            longitude: coord.longitude
+        )
+        savedLocations.append(new)
+        saveSavedLocations()
+    }
+
+    private func selectFavorite(_ saved: SavedLocation) {
+        let coord = CLLocationCoordinate2D(latitude: saved.latitude, longitude: saved.longitude)
+        selectedCoordinate = coord
+        selectedLocationName = saved.name
+        cameraPosition = .region(MKCoordinateRegion(
+            center: coord,
+            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        ))
+        showFavoritesSheet = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            showLocationSheet = true
+        }
+    }
+
+    private func deleteFavorite(_ saved: SavedLocation) {
+        savedLocations.removeAll { $0.id == saved.id }
+        saveSavedLocations()
     }
 
     private func connectVPN() {
