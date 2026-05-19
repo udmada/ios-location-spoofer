@@ -663,15 +663,6 @@ struct MapHomeView: View {
         saveSavedLocations()
     }
 
-    private func connectVPN() {
-        guard let manager = ContentView.vpnManager else { return }
-        do {
-            try manager.connection.startVPNTunnel()
-        } catch {
-            os_log("Failed to start VPN: %{public}@", error.localizedDescription)
-        }
-    }
-
     private func refreshVPNStatus() {
         if let manager = ContentView.vpnManager {
             vpnStatus = manager.connection.status
