@@ -3,7 +3,6 @@ import NetworkExtension
 import os.log
 
 struct ContentView: View {
-    @State private var vpnStatus: NEVPNStatus = .invalid
     @State private var showingInstallationAlert = false
     @State private var installationError: String?
     @State private var firstSetupCompleted: Bool = UserDefaults.standard.bool(forKey: "firstSetupCompleted")
@@ -18,11 +17,6 @@ struct ContentView: View {
         }
         .onAppear {
             installVPNIfNeeded()
-            NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { _ in
-                if let manager = ContentView.vpnManager {
-                    vpnStatus = manager.connection.status
-                }
-            }
             // 监听 firstSetupCompleted 变化(VPNControlView 完成 setup 后会写 UserDefaults)
             NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
                 let newValue = UserDefaults.standard.bool(forKey: "firstSetupCompleted")
@@ -66,9 +60,6 @@ struct ContentView: View {
                     showingInstallationAlert = true
                 } else {
                     ContentView.vpnManager = manager
-                    DispatchQueue.main.async {
-                        vpnStatus = manager.connection.status
-                    }
                 }
             }
         }
