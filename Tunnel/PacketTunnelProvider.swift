@@ -112,7 +112,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         ]
         settings.ipv4Settings = ipv4Settings
 
-        let dnsSettings = NEDNSSettings(servers: ["8.8.8.8", "1.1.1.1"])
+        let dnsSettings = NEDNSSettings(servers: ["223.5.5.5", "114.114.114.114"])
         settings.dnsSettings = dnsSettings
 
         settings.mtu = 1500
