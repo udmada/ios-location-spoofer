@@ -22,6 +22,7 @@ struct MapHomeView: View {
     @State private var vpnConnected: Bool = false
     @State private var vpnStatus: NEVPNStatus = .invalid
     @State private var savedLocations: [SavedLocation] = []
+    @State private var recentLocations: [SavedLocation] = []
     @State private var showFavoritesSheet = false
     @State private var spoofingState: SpoofingState = .off
     @State private var justFavorited: Bool = false
@@ -94,6 +95,7 @@ struct MapHomeView: View {
         .onAppear {
             refreshVPNStatus()
             loadSavedLocations()
+            loadRecentLocations()
             // 根据当前数据恢复 spoofingState
             let savedName = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
             if !savedName.isEmpty && vpnConnected {
@@ -355,29 +357,34 @@ struct MapHomeView: View {
     private var favoritesSheet: some View {
         NavigationView {
             List {
-                if savedLocations.isEmpty {
-                    Text("还没有收藏的位置")
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(savedLocations) { saved in
-                        Button(action: { selectFavorite(saved) }) {
-                            HStack {
-                                Image(systemName: "mappin.circle.fill")
-                                    .foregroundColor(.red)
-                                VStack(alignment: .leading) {
-                                    Text(saved.name)
-                                        .foregroundColor(.primary)
-                                    Text(String(format: "%.4f, %.4f", saved.latitude, saved.longitude))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
+                // 最近使用
+                if !recentLocations.isEmpty {
+                    Section("最近使用") {
+                        ForEach(recentLocations) { saved in
+                            Button(action: { selectFavorite(saved) }) {
+                                favoriteRow(saved: saved, iconName: "clock", iconColor: .orange)
                             }
                         }
                     }
-                    .onDelete { indexSet in
-                        for index in indexSet {
-                            deleteFavorite(savedLocations[index])
+                }
+
+                // 我的收藏
+                Section("我的收藏") {
+                    if savedLocations.isEmpty {
+                        Text("还没有收藏的位置")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(savedLocations) { saved in
+                            Button(action: { selectFavorite(saved) }) {
+                                favoriteRow(saved: saved, iconName: "star.fill", iconColor: .yellow)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    deleteFavorite(saved)
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -389,6 +396,22 @@ struct MapHomeView: View {
                     Button("完成") { showFavoritesSheet = false }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func favoriteRow(saved: SavedLocation, iconName: String, iconColor: Color) -> some View {
+        HStack {
+            Image(systemName: iconName)
+                .foregroundColor(iconColor)
+            VStack(alignment: .leading) {
+                Text(saved.name)
+                    .foregroundColor(.primary)
+                Text(String(format: "%.4f, %.4f", saved.latitude, saved.longitude))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
         }
     }
 
@@ -510,9 +533,29 @@ struct MapHomeView: View {
         }
     }
 
-    /// 占位:批 C 实现完整逻辑
+    private func loadRecentLocations() {
+        if let data = UserDefaults.standard.data(forKey: "recentLocations"),
+           let decoded = try? JSONDecoder().decode([SavedLocation].self, from: data) {
+            recentLocations = decoded
+        }
+    }
+
+    private func saveRecentLocations() {
+        if let encoded = try? JSONEncoder().encode(recentLocations) {
+            UserDefaults.standard.set(encoded, forKey: "recentLocations")
+        }
+    }
+
     private func addToRecentLocations(name: String, latitude: Double, longitude: Double) {
-        // 批 C 实现
+        // 去重:相同 name 移到顶部
+        recentLocations.removeAll { $0.name == name }
+        let new = SavedLocation(name: name, latitude: latitude, longitude: longitude)
+        recentLocations.insert(new, at: 0)
+        // 限制最多 5 个
+        if recentLocations.count > 5 {
+            recentLocations = Array(recentLocations.prefix(5))
+        }
+        saveRecentLocations()
     }
 
     /// 主动触发 VPN 连接,返回是否成功
