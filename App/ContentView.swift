@@ -554,7 +554,13 @@ struct VPNControlView: View {
                 }
                 .padding(24)
             }
-            .sheet(isPresented: $showStep7Tutorial) {
+            .sheet(isPresented: $showStep7Tutorial, onDismiss: {
+                if !locationServiceRestarted && !isRestoredLocation {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showRestartLocationPrompt = true
+                    }
+                }
+            }) {
                 VStack(spacing: 20) {
                     Text("重启定位服务教程")
                         .font(.title2).fontWeight(.bold)
@@ -705,6 +711,7 @@ extension VPNControlView {
             vpnRestarted = false
             locationServiceRestarted = false
             showStep7Confirm = false
+            locationSet = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 self.isConnecting = false
             }
