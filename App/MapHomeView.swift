@@ -8,6 +8,7 @@ struct MapHomeView: View {
         center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
         span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
     )
+    @State private var selectedFeature: MapFeature?
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
@@ -32,7 +33,7 @@ struct MapHomeView: View {
         ZStack(alignment: .top) {
             // 全屏地图
             MapReader { proxy in
-                Map(position: $cameraPosition) {
+                Map(position: $cameraPosition, selection: $selectedFeature) {
                     if let coord = selectedCoordinate {
                         Marker("目标位置", coordinate: coord)
                             .tint(.red)
@@ -42,6 +43,11 @@ struct MapHomeView: View {
                 .onTapGesture(coordinateSpace: .global) { tapLocation in
                     if let coordinate = proxy.convert(tapLocation, from: .global) {
                         selectCoordinate(coordinate)
+                    }
+                }
+                .onChange(of: selectedFeature) { _, newFeature in
+                    if let feature = newFeature {
+                        selectFeature(feature)
                     }
                 }
             }
@@ -260,6 +266,37 @@ struct MapHomeView: View {
                     .joined(separator: ", ")
                 DispatchQueue.main.async {
                     self.selectedLocationName = name.isEmpty ? "未知位置" : name
+                }
+            }
+        }
+    }
+
+    private func selectFeature(_ feature: MapFeature) {
+        let coord = feature.coordinate
+        selectedCoordinate = coord
+        selectedLocationName = feature.title ?? "未知地点"
+        showLocationSheet = true
+
+        // 移动地图镜头到 POI 位置(轻微动画)
+        withAnimation {
+            cameraPosition = .region(MKCoordinateRegion(
+                center: coord,
+                span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+            ))
+        }
+
+        // 如果 feature.title 为 nil,用反向地理编码补名字
+        if feature.title == nil {
+            let geocoder = CLGeocoder()
+            let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            geocoder.reverseGeocodeLocation(location) { placemarks, _ in
+                if let placemark = placemarks?.first {
+                    let name = [placemark.name, placemark.locality]
+                        .compactMap { $0 }
+                        .joined(separator: ", ")
+                    DispatchQueue.main.async {
+                        self.selectedLocationName = name.isEmpty ? "未知地点" : name
+                    }
                 }
             }
         }
