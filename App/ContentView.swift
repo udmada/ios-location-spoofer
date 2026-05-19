@@ -14,27 +14,11 @@ struct ContentView: View {
                 MapHomeView()
             } else {
                 NavigationView {
-                    VStack(spacing: 0) {
-                        // === 临时调试入口,验证完删除 ===
-                        Button(action: {
-                            UserDefaults.standard.set(true, forKey: "firstSetupCompleted")
-                            firstSetupCompleted = true
-                        }) {
-                            Text("[DEV] 跳到地图主界面")
-                                .font(.caption)
-                                .padding(8)
-                                .frame(maxWidth: .infinity)
-                                .background(Color.red.opacity(0.2))
-                                .foregroundColor(.red)
-                        }
-                        // === 调试入口结束 ===
-
-                        VPNControlView(
-                            vpnStatus: $vpnStatus,
-                            showingInstallationAlert: $showingInstallationAlert,
-                            installationError: $installationError
-                        )
-                    }
+                    VPNControlView(
+                        vpnStatus: $vpnStatus,
+                        showingInstallationAlert: $showingInstallationAlert,
+                        installationError: $installationError
+                    )
                 }
             }
         }
