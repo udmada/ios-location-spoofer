@@ -5,30 +5,78 @@ import os.log
 struct ContentView: View {
     @State private var vpnStatus: NEVPNStatus = .invalid
     @State private var showingInstallationAlert = false
-    @State private var installationError: String? = nil
+    @State private var installationError: String?
+    @State private var firstSetupCompleted: Bool = UserDefaults.standard.bool(forKey: "firstSetupCompleted")
 
     var body: some View {
-        TabView {
-            VPNControlView(vpnStatus: $vpnStatus, showingInstallationAlert: $showingInstallationAlert, installationError: $installationError)
-                .tabItem {
-                    Image(systemName: "house.fill")
-                    Text("主页")
+        Group {
+            if firstSetupCompleted {
+                MapHomeView()
+            } else {
+                NavigationView {
+                    VPNControlView(
+                        vpnStatus: $vpnStatus,
+                        showingInstallationAlert: $showingInstallationAlert,
+                        installationError: $installationError
+                    )
                 }
-                .tag(0)
-            CoordinateInputView()
-                .tabItem {
-                    Image(systemName: "location.fill")
-                    Text("位置")
-                }
-                .tag(1)
+            }
         }
         .onAppear {
-            loadVPNConfiguration()
+            installVPNIfNeeded()
+            NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { _ in
+                if let manager = ContentView.vpnManager {
+                    vpnStatus = manager.connection.status
+                }
+            }
+            // 监听 firstSetupCompleted 变化(VPNControlView 完成 setup 后会写 UserDefaults)
+            NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
+                let newValue = UserDefaults.standard.bool(forKey: "firstSetupCompleted")
+                if newValue != firstSetupCompleted {
+                    firstSetupCompleted = newValue
+                }
+            }
         }
         .alert("VPN 安装", isPresented: $showingInstallationAlert) {
-            Button("确定", role: .cancel) { }
+            Button("确定") { }
         } message: {
-            Text(installationError ?? "VPN 配置安装失败")
+            Text(installationError ?? "")
+        }
+    }
+
+    private func installVPNIfNeeded() {
+        NETunnelProviderManager.loadAllFromPreferences { managers, error in
+            if let error = error {
+                installationError = "加载 VPN 配置失败:\(error.localizedDescription)"
+                showingInstallationAlert = true
+                return
+            }
+
+            let manager: NETunnelProviderManager
+            if let existing = managers?.first {
+                manager = existing
+            } else {
+                manager = NETunnelProviderManager()
+            }
+
+            let proto = NETunnelProviderProtocol()
+            proto.providerBundleIdentifier = "com.whitemirror.location-spoofer.tunnel"
+            proto.serverAddress = "127.0.0.1"
+            manager.protocolConfiguration = proto
+            manager.localizedDescription = "任意门"
+            manager.isEnabled = true
+
+            manager.saveToPreferences { error in
+                if let error = error {
+                    installationError = "保存 VPN 配置失败:\(error.localizedDescription)"
+                    showingInstallationAlert = true
+                } else {
+                    ContentView.vpnManager = manager
+                    DispatchQueue.main.async {
+                        vpnStatus = manager.connection.status
+                    }
+                }
+            }
         }
     }
 }
@@ -692,28 +740,6 @@ struct VPNControlView: View {
 
 extension ContentView {
     static var vpnManager: NETunnelProviderManager?
-
-    func loadVPNConfiguration() {
-        NETunnelProviderManager.loadAllFromPreferences { managers, error in
-            if let error = error {
-                os_log("Failed to load VPN configurations: %{public}@", error.localizedDescription)
-                return
-            }
-            if let manager = managers?.first {
-                ContentView.vpnManager = manager
-                DispatchQueue.main.async {
-                    self.vpnStatus = manager.connection.status
-                }
-                NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: manager.connection, queue: .main) { _ in
-                    self.vpnStatus = manager.connection.status
-                }
-            } else {
-                DispatchQueue.main.async {
-                    self.vpnStatus = .invalid
-                }
-            }
-        }
-    }
 }
 
 extension VPNControlView {
