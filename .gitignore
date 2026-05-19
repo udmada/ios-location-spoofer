@@ -77,3 +77,6 @@ temp/
 certs/
 new_icon.png
 fix_plist.py
+
+# Claude Code local settings
+.claude/settings.local.json

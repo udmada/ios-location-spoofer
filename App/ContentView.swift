@@ -136,6 +136,7 @@ struct VPNControlView: View {
     @State private var locationSet: Bool = false
 
     @State private var vpnRestarted = false
+    @State private var vpnRestarting = false
 
     @State private var showStep7Confirm = false
     @State private var locationServiceRestarted = false
@@ -219,7 +220,7 @@ struct VPNControlView: View {
                     .cornerRadius(10)
 
                     // 恢复真实定位
-                    if locationSet && !isVPNConnected {
+                    if locationSet && !isVPNConnected && !vpnRestarting {
                         Button(action: { restoreRealLocation() }) {
                             HStack {
                                 Image(systemName: isRestoredLocation ? "checkmark.circle.fill" : "arrow.uturn.backward")
@@ -482,12 +483,7 @@ struct VPNControlView: View {
             }
             .alert("请重启定位服务", isPresented: $showRestartLocationPrompt) {
                 Button("查看教程") {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        showStep7Tutorial = true
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showRestartLocationPrompt = true
-                    }
+                    showStep7Tutorial = true
                 }
                 Button("已完成重启") {
                     isRestoredLocation = true
@@ -617,12 +613,16 @@ struct VPNControlView: View {
 
     private func restartVPN() {
         guard let manager = ContentView.vpnManager else { return }
+        vpnRestarting = true
         manager.connection.stopVPNTunnel()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             do {
                 try manager.connection.startVPNTunnel()
             } catch {
                 os_log("VPN restart failed: %{public}@", error.localizedDescription)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                self.vpnRestarting = false
             }
         }
     }
@@ -633,6 +633,7 @@ struct VPNControlView: View {
         locationSet = false
         vpnRestarted = false
         locationServiceRestarted = false
+        showStep7Confirm = false
         showRestartLocationPrompt = true
     }
 }
@@ -701,6 +702,9 @@ extension VPNControlView {
         isConnecting = true
         if vpnStatus == .connected {
             manager.connection.stopVPNTunnel()
+            vpnRestarted = false
+            locationServiceRestarted = false
+            showStep7Confirm = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 self.isConnecting = false
             }
