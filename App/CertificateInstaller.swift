@@ -1,6 +1,33 @@
 import Foundation
 import UIKit
 
+// 强引用持有 UIDocumentInteractionController,防止 ARC 提前释放
+private class DocControllerHolder: NSObject, UIDocumentInteractionControllerDelegate {
+    static let shared = DocControllerHolder()
+    var currentController: UIDocumentInteractionController?
+    var completion: ((Bool, String?) -> Void)?
+
+    func documentInteractionController(_ controller: UIDocumentInteractionController, willBeginSendingToApplication application: String?) {
+        // 用户选了打开方式
+    }
+
+    func documentInteractionController(_ controller: UIDocumentInteractionController, didEndSendingToApplication application: String?) {
+        // 已发送给系统处理
+        completion?(true, nil)
+        currentController = nil
+        completion = nil
+    }
+
+    func documentInteractionControllerDidDismissOpenInMenu(_ controller: UIDocumentInteractionController) {
+        // 菜单被取消(用户没选任何项),只有在还没成功发送时才报失败
+        if currentController != nil {
+            completion?(false, "用户取消了证书安装")
+            currentController = nil
+            completion = nil
+        }
+    }
+}
+
 enum CertificateInstaller {
 
     private static let appGroupID = "group.com.whitemirror.location-spoofer"
@@ -80,8 +107,8 @@ enum CertificateInstaller {
         return plist.data(using: .utf8)
     }
 
-    /// 把 mobileconfig 写到临时目录,然后调用系统安装
-    /// 返回 true 表示成功唤起系统安装界面
+    /// 把 mobileconfig 写到临时目录,用 UIDocumentInteractionController 弹出系统安装界面
+    /// 返回 true 表示用户成功唤起并接受了系统安装流程
     static func installCertificate(completion: @escaping (Bool, String?) -> Void) {
         guard let configData = generateMobileConfig() else {
             completion(false, "无法读取证书,请先连接VPN生成证书")
@@ -100,12 +127,34 @@ enum CertificateInstaller {
         }
 
         DispatchQueue.main.async {
-            if UIApplication.shared.canOpenURL(fileURL) {
-                UIApplication.shared.open(fileURL, options: [:]) { success in
-                    completion(success, success ? nil : "无法打开系统安装界面")
-                }
-            } else {
-                completion(false, "系统不支持打开此类型文件")
+            // 找到最上层的 view controller
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first,
+                  var topVC = window.rootViewController else {
+                completion(false, "无法获取当前界面")
+                return
+            }
+
+            // 钻到最上层(处理 modal、navigation 等情况)
+            while let presented = topVC.presentedViewController {
+                topVC = presented
+            }
+
+            let docController = UIDocumentInteractionController(url: fileURL)
+            docController.uti = "com.apple.mobileconfig"
+            docController.delegate = DocControllerHolder.shared
+
+            DocControllerHolder.shared.currentController = docController
+            DocControllerHolder.shared.completion = completion
+
+            // 在屏幕中央弹出"打开方式"菜单
+            let rect = CGRect(x: topVC.view.bounds.midX, y: topVC.view.bounds.midY, width: 0, height: 0)
+            let didPresent = docController.presentOpenInMenu(from: rect, in: topVC.view, animated: true)
+
+            if !didPresent {
+                DocControllerHolder.shared.currentController = nil
+                DocControllerHolder.shared.completion = nil
+                completion(false, "系统无可用的打开方式,请使用手动安装")
             }
         }
     }
