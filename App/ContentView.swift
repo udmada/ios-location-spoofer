@@ -126,6 +126,8 @@ struct VPNControlView: View {
 
     @State private var showStep2Confirm = false
     @State private var certDownloaded: Bool = UserDefaults.standard.bool(forKey: "certDownloaded")
+    @State private var showCertInstallError = false
+    @State private var certInstallErrorMessage = ""
 
     @State private var showStep3Confirm = false
     @State private var certInstalled: Bool = UserDefaults.standard.bool(forKey: "certInstalled")
@@ -254,45 +256,79 @@ struct VPNControlView: View {
                         Group {
                             // 步骤2
                             SetupStepView(
-                                stepNumber: 2, title: "下载描述文件", subtitle: "跳转网页后如未弹出配置文件下载，请复制下方地址到Safari重试",
+                                stepNumber: 2, title: "安装证书", subtitle: "点击下方按钮一键安装,如失败可使用手动方式",
                                 isCompleted: certDownloaded, isCurrent: isVPNConnected && !certDownloaded
                             )
                             if isVPNConnected && !certDownloaded {
-                                HStack {
-                                    Text("http://mitm.it")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
-                                    Spacer()
+                                VStack(spacing: 12) {
+                                    // 主操作:一键安装证书
                                     Button(action: {
-                                        UIPasteboard.general.string = "http://mitm.it"
+                                        CertificateInstaller.installCertificate { success, errorMsg in
+                                            if success {
+                                                certDownloaded = true
+                                                UserDefaults.standard.set(true, forKey: "certDownloaded")
+                                            } else {
+                                                certInstallErrorMessage = errorMsg ?? "未知错误"
+                                                showCertInstallError = true
+                                            }
+                                        }
                                     }) {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "doc.on.doc")
-                                            Text("复制")
+                                        HStack {
+                                            Image(systemName: "lock.shield.fill")
+                                            Text("一键安装证书")
+                                                .fontWeight(.semibold)
                                         }
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(10)
                                     }
-                                }
-                                .padding(8)
-                                .background(Color(UIColor.tertiarySystemBackground))
-                                .cornerRadius(6)
 
-                                StepActionButtons(
-                                    showConfirm: showStep2Confirm,
-                                    confirmTitle: "我已完成",
-                                    retryTitle: showStep2Confirm ? "再次下载" : "前往下载",
-                                    onConfirm: {
-                                        certDownloaded = true
-                                        UserDefaults.standard.set(true, forKey: "certDownloaded")
-                                    },
-                                    onAction: {
-                                        if let url = URL(string: "http://mitm.it") {
-                                            UIApplication.shared.open(url)
+                                    // Fallback:手动下载方式(折叠展示)
+                                    DisclosureGroup("手动安装(备用方式)") {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            HStack {
+                                                Text("http://mitm.it")
+                                                    .font(.caption)
+                                                    .foregroundColor(.blue)
+                                                Spacer()
+                                                Button(action: {
+                                                    UIPasteboard.general.string = "http://mitm.it"
+                                                }) {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: "doc.on.doc")
+                                                        Text("复制")
+                                                    }
+                                                    .font(.caption)
+                                                    .foregroundColor(.blue)
+                                                }
+                                            }
+                                            .padding(8)
+                                            .background(Color(UIColor.tertiarySystemBackground))
+                                            .cornerRadius(6)
+
+                                            StepActionButtons(
+                                                showConfirm: showStep2Confirm,
+                                                confirmTitle: "我已完成",
+                                                retryTitle: showStep2Confirm ? "再次下载" : "前往下载",
+                                                onConfirm: {
+                                                    certDownloaded = true
+                                                    UserDefaults.standard.set(true, forKey: "certDownloaded")
+                                                },
+                                                onAction: {
+                                                    if let url = URL(string: "http://mitm.it") {
+                                                        UIApplication.shared.open(url)
+                                                    }
+                                                    showStep2Confirm = true
+                                                }
+                                            )
                                         }
-                                        showStep2Confirm = true
+                                        .padding(.top, 4)
                                     }
-                                )
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                }
                             }
                         }
 
@@ -481,6 +517,11 @@ struct VPNControlView: View {
                 }
             } message: {
                 Text("新定位已生效，请打开地图验证。")
+            }
+            .alert("证书安装失败", isPresented: $showCertInstallError) {
+                Button("确定") { }
+            } message: {
+                Text(certInstallErrorMessage + "\n\n请使用「手动安装」展开备用方式。")
             }
             .alert("请重启定位服务", isPresented: $showRestartLocationPrompt) {
                 Button("查看教程") {
