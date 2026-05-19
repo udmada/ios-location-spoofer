@@ -39,20 +39,18 @@ struct MapHomeView: View {
                 .mapStyle(.standard(pointsOfInterest: .all))
                 .ignoresSafeArea()
                 .onTapGesture(coordinateSpace: .global) { tapLocation in
-                    // 只有当没有 POI 被选中时,空白点击才取坐标
-                    if selectedFeature == nil,
-                       let coordinate = proxy.convert(tapLocation, from: .global) {
+                    // 空白点击才取坐标。注意:Map 的 POI 内置选中由 selection 绑定处理,
+                    // 这个 onTapGesture 只在点击空白时触发(POI 点击会先被 Map 消化)
+                    if let coordinate = proxy.convert(tapLocation, from: .global) {
                         selectCoordinate(coordinate)
                     }
                 }
                 .onChange(of: selectedFeature) { _, newFeature in
                     if let feature = newFeature {
                         selectFeature(feature)
-                        // 选完后清空 selection,允许下次再选(包括同一个 POI 再次点击)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            selectedFeature = nil
-                        }
                     }
+                    // 移除自动清空:让 SwiftUI 自己管理 selection 生命周期
+                    // 用户点别处会自然取消 selection,点同一 POI 会重新触发 onChange
                 }
             }
 
@@ -437,6 +435,13 @@ struct MapHomeView: View {
                     }
                 }
             }
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            if case .none = selectedFeature { return }
+            // 0.6 秒后清空,让下次点击同一 POI 可以重新触发
+            selectedFeature = nil
         }
     }
 
