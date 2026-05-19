@@ -1,7 +1,6 @@
 import SwiftUI
 import MapKit
 import NetworkExtension
-import os.log
 
 struct MapHomeView: View {
     @State private var selectedFeature: MapFeature?
