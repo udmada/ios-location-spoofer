@@ -8,6 +8,12 @@ struct MapHomeView: View {
         center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
         span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
     )
+    @State private var cameraPosition: MapCameraPosition = .region(
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
+            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+        )
+    )
     @State private var searchText: String = ""
     @State private var selectedCoordinate: CLLocationCoordinate2D?
     @State private var selectedLocationName: String?
@@ -26,8 +32,11 @@ struct MapHomeView: View {
         ZStack(alignment: .top) {
             // 全屏地图
             MapReader { proxy in
-                Map(coordinateRegion: $region, annotationItems: mapAnnotations) { item in
-                    MapMarker(coordinate: item.coordinate, tint: .red)
+                Map(position: $cameraPosition) {
+                    if let coord = selectedCoordinate {
+                        Marker("目标位置", coordinate: coord)
+                            .tint(.red)
+                    }
                 }
                 .ignoresSafeArea()
                 .onTapGesture { tapLocation in
@@ -40,16 +49,19 @@ struct MapHomeView: View {
             // 顶部状态条
             VStack {
                 statusBar
-                Spacer()
+                Spacer().allowsHitTesting(false)
             }
+            .allowsHitTesting(true)
 
             // 底部搜索栏
             VStack {
-                Spacer()
+                Spacer().allowsHitTesting(false)
                 searchBar
             }
+            .allowsHitTesting(true)
 
-            // 右下角设置按钮
+            // 右下角设置按钮(暂时隐藏,等设置页做出来再放出)
+            /*
             VStack {
                 Spacer()
                 HStack {
@@ -59,6 +71,7 @@ struct MapHomeView: View {
                         .padding(.bottom, 90)
                 }
             }
+            */
         }
         .sheet(isPresented: $showLocationSheet) {
             locationSheet
@@ -231,15 +244,6 @@ struct MapHomeView: View {
         .padding(24)
     }
 
-    // MARK: - 数据
-
-    private var mapAnnotations: [MapPin] {
-        if let coord = selectedCoordinate {
-            return [MapPin(coordinate: coord)]
-        }
-        return []
-    }
-
     // MARK: - 动作
 
     private func selectCoordinate(_ coordinate: CLLocationCoordinate2D) {
@@ -270,7 +274,10 @@ struct MapHomeView: View {
             if let item = response?.mapItems.first {
                 let coord = item.placemark.coordinate
                 DispatchQueue.main.async {
-                    self.region.center = coord
+                    self.cameraPosition = .region(MKCoordinateRegion(
+                        center: coord,
+                        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                    ))
                     self.selectedCoordinate = coord
                     self.selectedLocationName = item.name
                     self.showLocationSheet = true
@@ -323,9 +330,4 @@ struct MapHomeView: View {
             vpnConnected = (vpnStatus == .connected)
         }
     }
-}
-
-struct MapPin: Identifiable {
-    let id = UUID()
-    let coordinate: CLLocationCoordinate2D
 }
