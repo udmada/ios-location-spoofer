@@ -77,13 +77,13 @@ struct MapHomeView: View {
         .sheet(isPresented: $showRestartLocationGuide) {
             restartLocationGuide
         }
-        .alert("关闭定位伪装", isPresented: $showDisableGuide) {
+        .alert("关闭虚拟定位", isPresented: $showDisableGuide) {
             Button("取消", role: .cancel) { }
-            Button("关闭并重启", role: .destructive) {
+            Button("关闭", role: .destructive) {
                 disableSpoofing()
             }
         } message: {
-            Text("将关闭 VPN 并清除虚假定位。\n请在关闭后长按电源键重启手机,真实定位才会恢复。")
+            Text("将关闭虚拟定位。关闭后请重启一次定位服务,真实定位才会恢复。")
         }
         .sheet(isPresented: $showRestartPhoneGuide) {
             disableRestartGuide
@@ -317,13 +317,13 @@ struct MapHomeView: View {
 
     private var disableRestartGuide: some View {
         VStack(spacing: 20) {
-            Text("已关闭定位伪装")
+            Text("已关闭虚拟定位")
                 .font(.title2).fontWeight(.bold)
-            Text("最后一步:重启定位服务")
+            Text("最后一步:重启定位服务,真实定位才会恢复")
                 .font(.title3)
                 .foregroundColor(.secondary)
             VStack(alignment: .leading, spacing: 12) {
-                Text("iOS 缓存了之前的定位,需要手动刷新一次:")
+                Text("请按以下步骤操作:")
                     .font(.body)
                 Text("① 打开 iPhone「设置」").font(.body)
                 Text("② 点击「隐私与安全性」").font(.body)
@@ -336,6 +336,7 @@ struct MapHomeView: View {
             Spacer()
             Button("我已完成") {
                 showRestartPhoneGuide = false
+                spoofingState = .off
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
@@ -532,6 +533,11 @@ struct MapHomeView: View {
     }
 
     private func disableSpoofing() {
+        let oldName = currentLocationName
+
+        // 进入 pending(关闭中)
+        spoofingState = .pending(name: oldName, isClosing: true)
+
         // 关 VPN
         if let manager = ContentView.vpnManager {
             manager.connection.stopVPNTunnel()
@@ -540,7 +546,8 @@ struct MapHomeView: View {
         LocationConfiguration.shared.clearCoordinates()
         UserDefaults.standard.removeObject(forKey: "currentLocationName")
         currentLocationName = ""
-        // 弹出"请重启定位服务"教学(因为 iOS 缓存定位结果)
+
+        // 弹出"请重启定位服务"教学
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             showRestartPhoneGuide = true
         }
