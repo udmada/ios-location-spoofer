@@ -38,6 +38,7 @@ struct MapHomeView: View {
                     }
                 }
                 .mapStyle(.standard(pointsOfInterest: .all))
+                .mapFeatureSelectionAccessory(.automatic)
                 .ignoresSafeArea()
                 .onTapGesture(coordinateSpace: .global) { tapLocation in
                     // 空白点击才取坐标。注意:Map 的 POI 内置选中由 selection 绑定处理,
@@ -442,12 +443,6 @@ struct MapHomeView: View {
             }
         }
 
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            if case .none = selectedFeature { return }
-            // 0.6 秒后清空,让下次点击同一 POI 可以重新触发
-            selectedFeature = nil
-        }
     }
 
     private func performSearch() {
