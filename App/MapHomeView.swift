@@ -23,6 +23,8 @@ struct MapHomeView: View {
     @State private var vpnStatus: NEVPNStatus = .invalid
     @State private var savedLocations: [SavedLocation] = []
     @State private var showFavoritesSheet = false
+    @State private var spoofingState: SpoofingState = .off
+    @State private var lastErrorReason: String = ""
 
     private var isSpoofing: Bool {
         !currentLocationName.isEmpty && vpnConnected
@@ -96,6 +98,16 @@ struct MapHomeView: View {
         .onAppear {
             refreshVPNStatus()
             loadSavedLocations()
+            // 根据当前数据恢复 spoofingState
+            let savedName = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
+            if !savedName.isEmpty && vpnConnected {
+                spoofingState = .on(name: savedName)
+            } else if !savedName.isEmpty && !vpnConnected {
+                // 有坐标但 VPN 没连 → 等同 off
+                spoofingState = .off
+            } else {
+                spoofingState = .off
+            }
             NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { _ in
                 refreshVPNStatus()
             }
