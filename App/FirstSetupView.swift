@@ -258,15 +258,48 @@ struct FirstSetupView: View {
     // MARK: - 占位:D2/D3 实现
 
     private func triggerVPNSetup() {
-        // D2 实现
-        // 临时占位:直接跳到下一步
-        currentStep = .cert
+        isProcessing = true
+
+        // 检查 ContentView.vpnManager 是否已就绪
+        guard let manager = ContentView.vpnManager else {
+            isProcessing = false
+            errorMessage = "VPN 配置尚未就绪,请稍候重试。如果持续出错,请重启 App。"
+            return
+        }
+
+        // 启动 VPN(首次会触发系统权限弹窗)
+        do {
+            try manager.connection.startVPNTunnel()
+            // 等待 3 秒看是否真的连上
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                isProcessing = false
+                if manager.connection.status == .connected {
+                    currentStep = .cert
+                } else {
+                    errorMessage = "VPN 连接超时,请重新尝试或检查网络。"
+                }
+            }
+        } catch {
+            isProcessing = false
+            errorMessage = "VPN 启动失败:\(error.localizedDescription)"
+        }
     }
 
     private func triggerCertInstall() {
-        // D2 实现
-        // 临时占位:直接跳到下一步
-        currentStep = .trust
+        isProcessing = true
+
+        CertificateInstaller.installCertificate { success, errMsg in
+            DispatchQueue.main.async {
+                isProcessing = false
+                if success {
+                    // Safari 已唤起,等用户从 Safari 回来后,自动到 trust 步骤
+                    UserDefaults.standard.set(true, forKey: "certDownloaded")
+                    currentStep = .trust
+                } else {
+                    errorMessage = errMsg ?? "证书安装唤起失败"
+                }
+            }
+        }
     }
 
     private func confirmTrust() {
