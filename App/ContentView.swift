@@ -256,7 +256,7 @@ struct VPNControlView: View {
                         Group {
                             // 步骤2
                             SetupStepView(
-                                stepNumber: 2, title: "安装证书", subtitle: "点击下方按钮一键安装,如失败可使用手动方式",
+                                stepNumber: 2, title: "安装证书", subtitle: "点击按钮跳转 Safari,出现「是否安装」提示后点安装",
                                 isCompleted: certDownloaded, isCurrent: isVPNConnected && !certDownloaded
                             )
                             if isVPNConnected && !certDownloaded {
