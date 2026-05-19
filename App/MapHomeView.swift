@@ -24,6 +24,7 @@ struct MapHomeView: View {
     @State private var savedLocations: [SavedLocation] = []
     @State private var showFavoritesSheet = false
     @State private var spoofingState: SpoofingState = .off
+    @State private var justFavorited: Bool = false
     @State private var lastErrorReason: String = ""
 
     var body: some View {
@@ -257,14 +258,18 @@ struct MapHomeView: View {
             HStack(spacing: 12) {
                 Button(action: { addCurrentSelectionToFavorites() }) {
                     HStack {
-                        Image(systemName: "star")
-                        Text("收藏")
+                        Image(systemName: justFavorited ? "checkmark.circle.fill" : "star")
+                        Text(justFavorited ? "已收藏" : "收藏")
+                            .fontWeight(justFavorited ? .semibold : .regular)
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color(UIColor.tertiarySystemBackground))
+                    .background(justFavorited ? Color.green.opacity(0.15) : Color(UIColor.tertiarySystemBackground))
+                    .foregroundColor(justFavorited ? Color.green : Color.primary)
                     .cornerRadius(12)
+                    .animation(.easeInOut(duration: 0.2), value: justFavorited)
                 }
+                .disabled(justFavorited)
                 Button(action: { setAsLocation() }) {
                     Text("设为定位")
                         .fontWeight(.semibold)
@@ -575,7 +580,11 @@ struct MapHomeView: View {
         guard let coord = selectedCoordinate,
               let name = selectedLocationName else { return }
         // 避免重复
-        if savedLocations.contains(where: { $0.name == name }) { return }
+        if savedLocations.contains(where: { $0.name == name }) {
+            // 已存在也给反馈,让用户知道点击生效
+            triggerFavoritedFeedback()
+            return
+        }
         let new = SavedLocation(
             name: name,
             latitude: coord.latitude,
@@ -583,6 +592,18 @@ struct MapHomeView: View {
         )
         savedLocations.append(new)
         saveSavedLocations()
+        triggerFavoritedFeedback()
+    }
+
+    private func triggerFavoritedFeedback() {
+        // 触感反馈
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+        // 视觉反馈
+        justFavorited = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            justFavorited = false
+        }
     }
 
     private func selectFavorite(_ saved: SavedLocation) {
