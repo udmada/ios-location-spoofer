@@ -39,15 +39,22 @@ struct MapHomeView: View {
                             .tint(.red)
                     }
                 }
+                .mapStyle(.standard(pointsOfInterest: .all))
                 .ignoresSafeArea()
                 .onTapGesture(coordinateSpace: .global) { tapLocation in
-                    if let coordinate = proxy.convert(tapLocation, from: .global) {
+                    // 只有当没有 POI 被选中时,空白点击才取坐标
+                    if selectedFeature == nil,
+                       let coordinate = proxy.convert(tapLocation, from: .global) {
                         selectCoordinate(coordinate)
                     }
                 }
                 .onChange(of: selectedFeature) { _, newFeature in
                     if let feature = newFeature {
                         selectFeature(feature)
+                        // 选完后清空 selection,允许下次再选(包括同一个 POI 再次点击)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            selectedFeature = nil
+                        }
                     }
                 }
             }
