@@ -175,7 +175,7 @@ func setupCertServing(proxy *goproxy.ProxyHttpServer, cert *tls.Certificate) {
 	})
 
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		if req.Host == "mitm.it" || req.Host == "www.mitm.it" {
+		if req.Host == "mitm.it" || req.Host == "www.mitm.it" || req.Host == "rendoor.cert" || req.Host == "www.rendoor.cert" {
 			resp := goproxy.NewResponse(req, "application/x-x509-ca-cert", http.StatusOK, string(certPEM))
 			resp.Header.Set("Content-Disposition", "attachment; filename=mitm-ca.crt")
 			return req, resp
