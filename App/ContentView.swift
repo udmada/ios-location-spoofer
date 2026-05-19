@@ -144,6 +144,7 @@ struct VPNControlView: View {
     @State private var showEffectiveAlert = false
     @State private var showRestartLocationPrompt = false
     @State private var isRestoredLocation = false
+    @State private var isRestoringLocation = false
 
     @State private var showStep3Tutorial = false
     @State private var showStep4Tutorial = false
@@ -220,7 +221,7 @@ struct VPNControlView: View {
                     .cornerRadius(10)
 
                     // 恢复真实定位
-                    if locationSet && !isVPNConnected && !vpnRestarting {
+                    if UserDefaults.standard.string(forKey: "currentLocationName") != nil && !isVPNConnected && !vpnRestarting {
                         Button(action: { restoreRealLocation() }) {
                             HStack {
                                 Image(systemName: isRestoredLocation ? "checkmark.circle.fill" : "arrow.uturn.backward")
@@ -487,8 +488,11 @@ struct VPNControlView: View {
                 }
                 Button("已完成重启") {
                     isRestoredLocation = true
+                    isRestoringLocation = false
                 }
-                Button("取消", role: .cancel) { }
+                Button("取消", role: .cancel) {
+                    isRestoringLocation = false
+                }
             } message: {
                 Text("请前往 设置>隐私与安全性>定位服务，关闭等待3秒后重新打开。")
             }
@@ -555,7 +559,7 @@ struct VPNControlView: View {
                 .padding(24)
             }
             .sheet(isPresented: $showStep7Tutorial, onDismiss: {
-                if !locationServiceRestarted && !isRestoredLocation {
+                if isRestoringLocation && !locationServiceRestarted && !isRestoredLocation {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         showRestartLocationPrompt = true
                     }
@@ -634,6 +638,7 @@ struct VPNControlView: View {
     }
 
     private func restoreRealLocation() {
+        isRestoringLocation = true
         LocationConfiguration.shared.clearCoordinates()
         UserDefaults.standard.removeObject(forKey: "currentLocationName")
         locationSet = false
@@ -711,7 +716,6 @@ extension VPNControlView {
             vpnRestarted = false
             locationServiceRestarted = false
             showStep7Confirm = false
-            locationSet = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 self.isConnecting = false
             }
