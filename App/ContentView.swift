@@ -13,13 +13,7 @@ struct ContentView: View {
             if firstSetupCompleted {
                 MapHomeView()
             } else {
-                NavigationView {
-                    VPNControlView(
-                        vpnStatus: $vpnStatus,
-                        showingInstallationAlert: $showingInstallationAlert,
-                        installationError: $installationError
-                    )
-                }
+                FirstSetupView()
             }
         }
         .onAppear {
