@@ -23,6 +23,7 @@ struct MapHomeView: View {
     @State private var savedLocations: [SavedLocation] = []
     @State private var recentLocations: [SavedLocation] = []
     @State private var showFavoritesSheet = false
+    @State private var showSettings = false
     @State private var spoofingState: SpoofingState = .off
     @State private var justFavorited: Bool = false
     @State private var lastErrorReason: String = ""
@@ -69,6 +70,24 @@ struct MapHomeView: View {
                 searchBar
             }
             .allowsHitTesting(true)
+
+            // 右上角齿轮(主界面所有覆盖元素的最后一项)
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: { showSettings = true }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.title3)
+                            .foregroundColor(.primary)
+                            .padding(10)
+                            .background(.regularMaterial)
+                            .clipShape(Circle())
+                    }
+                    .padding(.top, 8)
+                    .padding(.trailing, 12)
+                }
+                Spacer()
+            }
         }
         .sheet(isPresented: $showLocationSheet) {
             locationSheet
@@ -90,6 +109,9 @@ struct MapHomeView: View {
         }
         .sheet(isPresented: $showFavoritesSheet) {
             favoritesSheet
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
         .onAppear {
             refreshVPNStatus()
