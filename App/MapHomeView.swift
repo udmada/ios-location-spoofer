@@ -26,10 +26,6 @@ struct MapHomeView: View {
     @State private var spoofingState: SpoofingState = .off
     @State private var lastErrorReason: String = ""
 
-    private var isSpoofing: Bool {
-        !currentLocationName.isEmpty && vpnConnected
-    }
-
     var body: some View {
         ZStack(alignment: .top) {
             // 全屏地图
@@ -118,45 +114,28 @@ struct MapHomeView: View {
 
     private var statusBar: some View {
         HStack(spacing: 12) {
+            // 圆点
             Circle()
-                .fill(isSpoofing ? Color.green : Color.gray)
+                .fill(indicatorColor)
                 .frame(width: 10, height: 10)
 
+            // 文案
             VStack(alignment: .leading, spacing: 2) {
-                Text(isSpoofing ? "伪装中" : (currentLocationName.isEmpty ? "未启用" : "未启用(VPN 已断开)"))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                if !currentLocationName.isEmpty {
-                    Text(currentLocationName)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
+                Text(spoofingState.primaryText)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                if let sub = spoofingState.subText {
+                    Text(sub)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
 
             Spacer()
 
-            if !currentLocationName.isEmpty {
-                Button(action: { showDisableGuide = true }) {
-                    Text("关闭")
-                        .font(.caption)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.red.opacity(0.1))
-                        .foregroundColor(.red)
-                        .cornerRadius(6)
-                }
-            } else {
-                Button(action: { connectVPN() }) {
-                    Text(vpnConnected ? "VPN 已连" : "连接 VPN")
-                        .font(.caption)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(vpnConnected ? Color.green.opacity(0.1) : Color.blue.opacity(0.1))
-                        .foregroundColor(vpnConnected ? .green : .blue)
-                        .cornerRadius(6)
-                }
-            }
+            // 主操作按钮
+            actionButton
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -164,6 +143,63 @@ struct MapHomeView: View {
         .cornerRadius(12)
         .padding(.horizontal, 12)
         .padding(.top, 8)
+    }
+
+    private var indicatorColor: Color {
+        switch spoofingState {
+        case .off:      return .gray
+        case .pending:  return .yellow
+        case .on:       return .blue
+        case .failed:   return .red
+        }
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        switch spoofingState {
+        case .off:
+            EmptyView()
+        case .pending(_, let isClosing):
+            Button(action: {
+                // 取消 pending,根据 isClosing 决定回到哪个状态
+                if isClosing {
+                    // 取消关闭,恢复 on(如果还能找到原位置名)
+                    let name = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
+                    spoofingState = name.isEmpty ? .off : .on(name: name)
+                } else {
+                    // 取消开启
+                    spoofingState = .off
+                }
+            }) {
+                Text("取消")
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.15))
+                    .foregroundColor(.secondary)
+                    .cornerRadius(6)
+            }
+        case .on:
+            Button(action: { showDisableGuide = true }) {
+                Text("关闭")
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.red.opacity(0.1))
+                    .foregroundColor(.red)
+                    .cornerRadius(6)
+            }
+        case .failed:
+            Button(action: { spoofingState = .off }) {
+                Text("重试")
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.1))
+                    .foregroundColor(.blue)
+                    .cornerRadius(6)
+            }
+        }
     }
 
     private var searchBar: some View {
