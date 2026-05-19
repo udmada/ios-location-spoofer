@@ -21,6 +21,7 @@ struct MapHomeView: View {
     @State private var showLocationSheet = false
     @State private var showRestartLocationGuide = false
     @State private var showDisableGuide = false
+    @State private var showRestartPhoneGuide = false
     @State private var currentLocationName: String = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
     @State private var vpnConnected: Bool = false
     @State private var vpnStatus: NEVPNStatus = .invalid
@@ -100,6 +101,9 @@ struct MapHomeView: View {
             }
         } message: {
             Text("将关闭 VPN 并清除虚假定位。\n请在关闭后长按电源键重启手机,真实定位才会恢复。")
+        }
+        .sheet(isPresented: $showRestartPhoneGuide) {
+            disableRestartGuide
         }
         .onAppear {
             refreshVPNStatus()
@@ -257,6 +261,38 @@ struct MapHomeView: View {
         .padding(24)
     }
 
+    private var disableRestartGuide: some View {
+        VStack(spacing: 20) {
+            Text("已关闭定位伪装")
+                .font(.title2).fontWeight(.bold)
+            Text("最后一步:重启定位服务")
+                .font(.title3)
+                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("iOS 缓存了之前的定位,需要手动刷新一次:")
+                    .font(.body)
+                Text("① 打开 iPhone「设置」").font(.body)
+                Text("② 点击「隐私与安全性」").font(.body)
+                Text("③ 点击「定位服务」").font(.body)
+                Text("④ 关闭「定位服务」开关").font(.body)
+                Text("⑤ 等待 3 秒").font(.body).foregroundColor(.red)
+                Text("⑥ 重新打开「定位服务」开关").font(.body)
+            }
+            .padding()
+            Spacer()
+            Button("我已完成") {
+                showRestartPhoneGuide = false
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.green)
+            .foregroundColor(.white)
+            .cornerRadius(12)
+        }
+        .padding(24)
+    }
+
     // MARK: - 动作
 
     private func selectCoordinate(_ coordinate: CLLocationCoordinate2D) {
@@ -357,6 +393,10 @@ struct MapHomeView: View {
         LocationConfiguration.shared.clearCoordinates()
         UserDefaults.standard.removeObject(forKey: "currentLocationName")
         currentLocationName = ""
+        // 弹出"请重启定位服务"教学(因为 iOS 缓存定位结果)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            showRestartPhoneGuide = true
+        }
     }
 
     private func connectVPN() {
