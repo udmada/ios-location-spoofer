@@ -4,10 +4,6 @@ import NetworkExtension
 import os.log
 
 struct MapHomeView: View {
-    @State private var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
-        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-    )
     @State private var selectedFeature: MapFeature?
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
@@ -75,19 +71,6 @@ struct MapHomeView: View {
                 searchBar
             }
             .allowsHitTesting(true)
-
-            // 右下角设置按钮(暂时隐藏,等设置页做出来再放出)
-            /*
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    settingsButton
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 90)
-                }
-            }
-            */
         }
         .sheet(isPresented: $showLocationSheet) {
             locationSheet
@@ -203,17 +186,6 @@ struct MapHomeView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 24)
-    }
-
-    private var settingsButton: some View {
-        Button(action: { /* TODO: 设置页 */ }) {
-            Image(systemName: "gearshape.fill")
-                .font(.title2)
-                .foregroundColor(.primary)
-                .padding(12)
-                .background(.regularMaterial)
-                .clipShape(Circle())
-        }
     }
 
     private var locationSheet: some View {
