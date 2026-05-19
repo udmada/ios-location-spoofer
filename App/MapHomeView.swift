@@ -299,6 +299,11 @@ struct MapHomeView: View {
             Spacer()
             Button("我已完成") {
                 showRestartLocationGuide = false
+                // pending → on
+                let name = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
+                if !name.isEmpty {
+                    spoofingState = .on(name: name)
+                }
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
@@ -459,17 +464,70 @@ struct MapHomeView: View {
         guard let coord = selectedCoordinate else { return }
         let name = selectedLocationName ?? "未知位置"
 
+        // 进入 pending 状态(尚未生效)
+        spoofingState = .pending(name: name, isClosing: false)
+
         // GCJ-02 转 WGS-84
         let converted = CoordinateConverter.gcj02ToWgs84(lat: coord.latitude, lng: coord.longitude)
         LocationConfiguration.shared.setCoordinates(latitude: converted.latitude, longitude: converted.longitude)
         UserDefaults.standard.set(name, forKey: "currentLocationName")
         currentLocationName = name
 
-        showLocationSheet = false
+        // 添加到"最近使用"(批 C 用,目前先写好接口)
+        addToRecentLocations(name: name, latitude: coord.latitude, longitude: coord.longitude)
 
-        // 弹出"重启定位服务"引导
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            showRestartLocationGuide = true
+        // 检查 VPN 状态,需要时自动连
+        if !vpnConnected {
+            connectVPNForSpoofing { success, errorMsg in
+                if success {
+                    // VPN 连上后,弹出"重启定位服务"教学
+                    DispatchQueue.main.async {
+                        showLocationSheet = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showRestartLocationGuide = true
+                        }
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        // 失败,显示具体原因
+                        spoofingState = .failed(reason: errorMsg ?? "未知错误")
+                        showLocationSheet = false
+                    }
+                }
+            }
+        } else {
+            // VPN 已连,直接弹教学
+            showLocationSheet = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showRestartLocationGuide = true
+            }
+        }
+    }
+
+    /// 占位:批 C 实现完整逻辑
+    private func addToRecentLocations(name: String, latitude: Double, longitude: Double) {
+        // 批 C 实现
+    }
+
+    /// 主动触发 VPN 连接,返回是否成功
+    private func connectVPNForSpoofing(completion: @escaping (Bool, String?) -> Void) {
+        guard let manager = ContentView.vpnManager else {
+            completion(false, "VPN 配置未初始化,请重启 App")
+            return
+        }
+        do {
+            try manager.connection.startVPNTunnel()
+            // 等待 3 秒看 VPN 是否真的连上
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                let connected = (manager.connection.status == .connected)
+                if connected {
+                    completion(true, nil)
+                } else {
+                    completion(false, "VPN 连接超时,请检查网络")
+                }
+            }
+        } catch {
+            completion(false, "VPN 启动失败:\(error.localizedDescription)")
         }
     }
 
