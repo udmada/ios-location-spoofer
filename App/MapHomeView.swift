@@ -2,6 +2,21 @@ import SwiftUI
 import MapKit
 import NetworkExtension
 
+/// 诊断面板用:把 NEVPNStatus 映射成可读字符串(带 rawValue)。
+private extension NEVPNStatus {
+    var diagDesc: String {
+        switch self {
+        case .invalid: return "invalid(0)"
+        case .disconnected: return "disconnected(1)"
+        case .connecting: return "connecting(2)"
+        case .connected: return "connected(3)"
+        case .reasserting: return "reasserting(4)"
+        case .disconnecting: return "disconnecting(5)"
+        @unknown default: return "unknown"
+        }
+    }
+}
+
 struct MapHomeView: View {
     @State private var mapSelection: MapSelection<MKMapItem>?
     @State private var cameraPosition: MapCameraPosition = .region(
@@ -314,6 +329,7 @@ struct MapHomeView: View {
                 showRestartLocationGuide = false
                 // pending → on
                 let name = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
+                DiagLog.add("用户点【我已完成】:name=\(name),状态置 on,即将关 VPN")
                 if !name.isEmpty {
                     spoofingState = .on(name: name)
                 }
@@ -514,6 +530,7 @@ struct MapHomeView: View {
     private func setAsLocation() {
         guard let coord = selectedCoordinate else { return }
         let name = selectedLocationName ?? "未知位置"
+        DiagLog.add("设为定位入口:坐标=(\(coord.latitude), \(coord.longitude)) 名称=\(name) vpnConnected=\(vpnConnected) → 走\(vpnConnected ? "热切重启" : "冷启动")分支")
 
         // 进入 pending 状态(尚未生效)
         spoofingState = .pending(name: name, isClosing: false)
@@ -523,6 +540,7 @@ struct MapHomeView: View {
         LocationConfiguration.shared.setCoordinates(latitude: converted.latitude, longitude: converted.longitude)
         UserDefaults.standard.set(name, forKey: "currentLocationName")
         currentLocationName = name
+        DiagLog.add("已写入坐标(WGS-84)到 LocationConfiguration + UserDefaults")
 
         // 收藏/最近存原始 GCJ-02 坐标(用于显示和地图回显),设为定位时才在 setAsLocation 内转 WGS-84
         addToRecentLocations(name: name, latitude: coord.latitude, longitude: coord.longitude)
@@ -531,15 +549,18 @@ struct MapHomeView: View {
         if !vpnConnected {
             connectVPNForSpoofing { success, errorMsg in
                 if success {
+                    DiagLog.add("[冷启动] connectVPNForSpoofing 回调 success → 关 sheet,1 秒后弹教学")
                     // VPN 连上后,弹出"重启定位服务"教学
                     DispatchQueue.main.async {
                         showLocationSheet = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             showRestartLocationGuide = true
+                            DiagLog.add("[冷启动] 已弹出重启定位服务教学")
                         }
                     }
                 } else {
                     DispatchQueue.main.async {
+                        DiagLog.add("[冷启动] connectVPNForSpoofing 回调 failure:\(errorMsg ?? "未知错误")")
                         // 失败,显示具体原因
                         spoofingState = .failed(reason: errorMsg ?? "未知错误")
                         showLocationSheet = false
@@ -584,7 +605,9 @@ struct MapHomeView: View {
     /// 关键:NE status == .connected 不代表 Go 代理 127.0.0.1:8888 已 ListenAndServe,
     /// 所以 .connected 后再延迟 2 秒,确保用户重启定位服务时代理已经能接请求。
     private func connectVPNForSpoofing(completion: @escaping (Bool, String?) -> Void) {
+        DiagLog.add("[冷启动] 进入 connectVPNForSpoofing")
         guard let manager = ContentView.vpnManager else {
+            DiagLog.add("[冷启动] 失败:vpnManager 为 nil")
             completion(false, "VPN 配置未初始化,请重启 App")
             return
         }
@@ -598,11 +621,14 @@ struct MapHomeView: View {
                 NotificationCenter.default.removeObserver(observer)
             }
             if ok {
+                DiagLog.add("[冷启动] VPN 已连接,开始 Go 就绪缓冲 2 秒")
                 // 给 Go 代理一段 ListenAndServe 就绪缓冲再回调
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    DiagLog.add("[冷启动] Go 就绪缓冲结束,回调 completion(true)")
                     completion(true, nil)
                 }
             } else {
+                DiagLog.add("[冷启动] finish 失败:\(errMsg ?? "VPN 启动失败")")
                 completion(false, errMsg ?? "VPN 启动失败")
             }
         }
@@ -615,6 +641,7 @@ struct MapHomeView: View {
             guard !state.finished else { return }
             guard let conn = notification.object as? NEVPNConnection,
                   conn === manager.connection else { return }
+            DiagLog.add("[冷启动] 观察者收到状态变化: \(manager.connection.status.diagDesc)")
             switch manager.connection.status {
             case .connected:
                 finish(true, nil)
@@ -633,6 +660,7 @@ struct MapHomeView: View {
 
         do {
             try manager.connection.startVPNTunnel()
+            DiagLog.add("[冷启动] 已调 startVPNTunnel,等待 .connected 事件")
         } catch {
             finish(false, "VPN 启动失败:\(error.localizedDescription)")
             return
@@ -658,7 +686,9 @@ struct MapHomeView: View {
     /// 8 秒超时兜底,RestartState.finished token 防止超时与成功回调冲突。
     /// 整个过程藏在 setAsLocation 已设的 pending 幕布后,成功才弹"重启定位服务"教学。
     private func restartVPNForNewCoordinates() {
+        DiagLog.add("[热切] 进入 restartVPNForNewCoordinates")
         guard let manager = ContentView.vpnManager else {
+            DiagLog.add("[热切] 失败:vpnManager 为 nil")
             spoofingState = .failed(reason: "VPN 配置未初始化,请重启 App")
             return
         }
@@ -672,11 +702,14 @@ struct MapHomeView: View {
                 NotificationCenter.default.removeObserver(observer)
             }
             if ok {
+                DiagLog.add("[热切] 重连成功,0.3 秒后弹定位重启教学")
                 // 短暂过渡让状态卡的 pending→connected 视觉变化可见,再弹教学
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     showRestartLocationGuide = true
+                    DiagLog.add("[热切] 已弹出重启定位服务教学")
                 }
             } else {
+                DiagLog.add("[热切] finish 失败:\(errMsg ?? "VPN 重连失败")")
                 spoofingState = .failed(reason: errMsg ?? "VPN 重连失败")
             }
         }
@@ -693,8 +726,10 @@ struct MapHomeView: View {
             guard let conn = notification.object as? NEVPNConnection,
                   conn === manager.connection else { return }
             let status = manager.connection.status
+            DiagLog.add("[热切] 观察者收到状态变化: \(status.diagDesc) phase=\(state.phase)")
             switch (state.phase, status) {
             case (0, .disconnected), (0, .invalid):
+                DiagLog.add("[热切] phase 0→1:tunnel 已停,调 startVPNTunnel 等待 .connected")
                 state.phase = 1
                 do {
                     try manager.connection.startVPNTunnel()
@@ -702,6 +737,7 @@ struct MapHomeView: View {
                     finish(false, "VPN 启动失败:\(error.localizedDescription)")
                 }
             case (1, .connected):
+                DiagLog.add("[热切] phase 1 收到 .connected,调 finish(true)")
                 finish(true, nil)
             default:
                 break  // 忽略 .connecting / .disconnecting / .reasserting 中间态
@@ -718,6 +754,7 @@ struct MapHomeView: View {
                 finish(false, "VPN 启动失败:\(error.localizedDescription)")
             }
         } else {
+            DiagLog.add("[热切] 调 stopVPNTunnel,等 .disconnected 事件")
             manager.connection.stopVPNTunnel()
         }
 
