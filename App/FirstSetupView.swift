@@ -260,14 +260,26 @@ struct FirstSetupView: View {
     private func triggerVPNSetup() {
         isProcessing = true
 
-        // 检查 ContentView.vpnManager 是否已就绪
-        guard let manager = ContentView.vpnManager else {
-            isProcessing = false
-            errorMessage = "VPN 配置尚未就绪,请稍候重试。如果持续出错,请重启 App。"
-            return
+        if let manager = ContentView.vpnManager {
+            startTunnelAndAdvance(manager: manager)
+        } else {
+            // 首次:vpnManager 还没就绪,当场安装配置再启动
+            ContentView.installAndStartVPN { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let manager):
+                        startTunnelAndAdvance(manager: manager)
+                    case .failure(let error):
+                        isProcessing = false
+                        errorMessage = "VPN 配置安装失败:\(error.localizedDescription)"
+                    }
+                }
+            }
         }
+    }
 
-        // 启动 VPN(首次会触发系统权限弹窗)
+    /// 启动 VPN tunnel,3 秒后检查连接状态,连上就推进到 .cert,否则报超时。
+    private func startTunnelAndAdvance(manager: NETunnelProviderManager) {
         do {
             try manager.connection.startVPNTunnel()
             // 等待 3 秒看是否真的连上
