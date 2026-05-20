@@ -135,7 +135,7 @@ class GoLocationSpoofer {
     func getCurrentCoords() -> (lat: Double, lon: Double, enabled: Bool)? {
         guard proxyHandle != nil else { return nil }
         let result = golocationspoofer_getcoords()
-        return (lat: Double(result.lat), lon: Double(result.lon), enabled: result.enabled != 0)
+        return (lat: Double(result.r0), lon: Double(result.r1), enabled: result.r2 != 0)
     }
 
 }
