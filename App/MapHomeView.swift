@@ -682,11 +682,15 @@ struct MapHomeView: View {
                 NotificationCenter.default.removeObserver(observer)
             }
             if ok {
-                DiagLog.add("[冷启动] VPN 已连接,开始 Go 就绪缓冲 2 秒")
-                // 给 Go 代理一段 ListenAndServe 就绪缓冲再回调
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    DiagLog.add("[冷启动] Go 就绪缓冲结束,回调 completion(true)")
-                    completion(true, nil)
+                DiagLog.add("[冷启动] VPN 已连接,启动 Go 代理就绪探测(总超时 10 秒)")
+                probeGoProxyReady(timeout: 10) { ready in
+                    if ready {
+                        DiagLog.add("[冷启动] Go 就绪,回调 completion(true)")
+                        completion(true, nil)
+                    } else {
+                        DiagLog.add("[冷启动] Go 就绪探测超时,回调 completion(false)")
+                        completion(false, "Go 代理就绪超时,请重试")
+                    }
                 }
             } else {
                 DiagLog.add("[冷启动] finish 失败:\(errMsg ?? "VPN 启动失败")")
