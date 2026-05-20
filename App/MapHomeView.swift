@@ -548,7 +548,7 @@ struct MapHomeView: View {
 
         // 检查 VPN 状态,需要时自动连
         if !vpnConnected {
-            connectVPNForSpoofing { success, errorMsg in
+            connectVPNForSpoofing(expectedLat: converted.latitude, expectedLon: converted.longitude) { success, errorMsg in
                 if success {
                     DiagLog.add("[冷启动] connectVPNForSpoofing 回调 success → 关 sheet,1 秒后弹教学")
                     // VPN 连上后,弹出"重启定位服务"教学
@@ -572,7 +572,7 @@ struct MapHomeView: View {
             // VPN 已连:无感重启 tunnel,让 Network Extension 重读新坐标。
             // 临时观察者驱动 stop→等disconnect→start→等connect 两阶段状态机,8 秒超时。
             showLocationSheet = false
-            restartVPNForNewCoordinates()
+            restartVPNForNewCoordinates(expectedLat: converted.latitude, expectedLon: converted.longitude)
         }
     }
 
@@ -661,11 +661,79 @@ struct MapHomeView: View {
         attempt()
     }
 
+    /// 通过 NETunnelProviderSession.sendProviderMessage 向 Tunnel 进程查询 Go 代理当前持有的坐标。
+    /// Tunnel 协议:发 "getCoords" UTF-8,收 17 字节(1 字节 enabled + 8 字节 lat LE + 8 字节 lon LE)。
+    /// 回调在主线程触发;session 不可用或 sendProviderMessage 抛错均回 nil。
+    private func queryGoCoordsViaIPC(completion: @escaping ((lat: Double, lon: Double, enabled: Bool)?) -> Void) {
+        guard let manager = ContentView.vpnManager,
+              let session = manager.connection as? NETunnelProviderSession else {
+            DiagLog.add("[IPC] session 不可用(manager nil 或 connection 不是 NETunnelProviderSession)")
+            completion(nil)
+            return
+        }
+        let request = Data("getCoords".utf8)
+        do {
+            try session.sendProviderMessage(request) { response in
+                DispatchQueue.main.async {
+                    guard let data = response, data.count == 17 else {
+                        completion(nil)
+                        return
+                    }
+                    let enabled = data[0] != 0
+                    let lat = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 1, as: Double.self) }
+                    let lon = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 9, as: Double.self) }
+                    completion((lat: lat, lon: lon, enabled: enabled))
+                }
+            }
+        } catch {
+            DiagLog.add("[IPC] sendProviderMessage 抛错:\(error.localizedDescription)")
+            completion(nil)
+        }
+    }
+
+    /// 弹"重启定位服务"教学前,确认 Go 已加载新坐标——根治 App Group UserDefaults 跨进程同步竞态。
+    /// 循环 IPC 查询 Go 当前持有的坐标,与 expected(WGS-84)做 epsilon (1e-5) 比对。
+    /// 匹配 → completion(true);不匹配或 IPC 失败 → 0.3 秒后重试;到总超时仍未匹配 → completion(false)。
+    private func confirmCoordsReady(expectedLat: Double, expectedLon: Double, timeout: TimeInterval, completion: @escaping (Bool) -> Void) {
+        let started = Date()
+        let deadline = started.addingTimeInterval(timeout)
+        DiagLog.add("[确认] 开始 expected=(\(String(format: "%.6f", expectedLat)), \(String(format: "%.6f", expectedLon))) 总超时 \(Int(timeout)) 秒")
+
+        var attemptCount = 0
+        func attempt() {
+            attemptCount += 1
+            let myAttempt = attemptCount
+            queryGoCoordsViaIPC { result in
+                if let r = result {
+                    let dLat = abs(r.lat - expectedLat)
+                    let dLon = abs(r.lon - expectedLon)
+                    if dLat < 1e-5 && dLon < 1e-5 {
+                        let elapsed = Date().timeIntervalSince(started)
+                        DiagLog.add("[确认] 第 \(myAttempt) 次匹配 Go=(\(String(format: "%.6f", r.lat)), \(String(format: "%.6f", r.lon))) enabled=\(r.enabled),总耗时约 \(String(format: "%.2f", elapsed))s")
+                        completion(true)
+                        return
+                    }
+                    DiagLog.add("[确认] 第 \(myAttempt) 次不匹配 Go=(\(String(format: "%.6f", r.lat)), \(String(format: "%.6f", r.lon))) dLat=\(String(format: "%.6f", dLat)) dLon=\(String(format: "%.6f", dLon)),0.3 秒后重试")
+                } else {
+                    DiagLog.add("[确认] 第 \(myAttempt) 次 IPC 失败,0.3 秒后重试")
+                }
+                if Date() < deadline {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { attempt() }
+                } else {
+                    let elapsed = Date().timeIntervalSince(started)
+                    DiagLog.add("[确认] 第 \(myAttempt) 次后到总超时,坐标确认放弃(总耗时约 \(String(format: "%.2f", elapsed))s)")
+                    completion(false)
+                }
+            }
+        }
+        attempt()
+    }
+
     /// 主动触发 VPN 连接(冷启动场景)。事件驱动等 .connected,然后给 Go 代理一段就绪缓冲再回调。
     /// 复用 RestartState 持有 observer/finished;object: nil 全接收 + 身份过滤;30 秒超时。
     /// 关键:NE status == .connected 不代表 Go 代理 127.0.0.1:8888 已 ListenAndServe,
     /// 所以 .connected 后再延迟 2 秒,确保用户重启定位服务时代理已经能接请求。
-    private func connectVPNForSpoofing(completion: @escaping (Bool, String?) -> Void) {
+    private func connectVPNForSpoofing(expectedLat: Double, expectedLon: Double, completion: @escaping (Bool, String?) -> Void) {
         DiagLog.add("[冷启动] 进入 connectVPNForSpoofing")
         guard let manager = ContentView.vpnManager else {
             DiagLog.add("[冷启动] 失败:vpnManager 为 nil")
@@ -685,10 +753,18 @@ struct MapHomeView: View {
                 DiagLog.add("[冷启动] VPN 已连接,启动 Go 代理就绪探测(总超时 10 秒)")
                 probeGoProxyReady(timeout: 10) { ready in
                     if ready {
-                        DiagLog.add("[冷启动] Go 就绪,回调 completion(true)")
-                        completion(true, nil)
+                        DiagLog.add("[冷启动] Go TCP 就绪,启动坐标确认(总超时 15 秒)")
+                        confirmCoordsReady(expectedLat: expectedLat, expectedLon: expectedLon, timeout: 15) { matched in
+                            if matched {
+                                DiagLog.add("[冷启动] 坐标已确认,回调 completion(true)")
+                                completion(true, nil)
+                            } else {
+                                DiagLog.add("[冷启动] 坐标确认超时,回调 completion(false)")
+                                completion(false, "Go 代理已就绪但坐标确认超时,请重试")
+                            }
+                        }
                     } else {
-                        DiagLog.add("[冷启动] Go 就绪探测超时,回调 completion(false)")
+                        DiagLog.add("[冷启动] Go TCP 就绪探测超时,回调 completion(false)")
                         completion(false, "Go 代理就绪超时,请重试")
                     }
                 }
@@ -750,7 +826,7 @@ struct MapHomeView: View {
     /// 阶段0:stopVPNTunnel → 等 .disconnected;阶段1:startVPNTunnel → 等 .connected。
     /// 8 秒超时兜底,RestartState.finished token 防止超时与成功回调冲突。
     /// 整个过程藏在 setAsLocation 已设的 pending 幕布后,成功才弹"重启定位服务"教学。
-    private func restartVPNForNewCoordinates() {
+    private func restartVPNForNewCoordinates(expectedLat: Double, expectedLon: Double) {
         DiagLog.add("[热切] 进入 restartVPNForNewCoordinates")
         guard let manager = ContentView.vpnManager else {
             DiagLog.add("[热切] 失败:vpnManager 为 nil")
@@ -770,13 +846,21 @@ struct MapHomeView: View {
                 DiagLog.add("[热切] VPN 已重连,启动 Go 代理就绪探测(总超时 10 秒)")
                 probeGoProxyReady(timeout: 10) { ready in
                     if ready {
-                        DiagLog.add("[热切] Go 就绪,0.3 秒后弹定位重启教学")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showRestartLocationGuide = true
-                            DiagLog.add("[热切] 已弹出重启定位服务教学")
+                        DiagLog.add("[热切] Go TCP 就绪,启动坐标确认(总超时 15 秒)")
+                        confirmCoordsReady(expectedLat: expectedLat, expectedLon: expectedLon, timeout: 15) { matched in
+                            if matched {
+                                DiagLog.add("[热切] 坐标已确认,0.3 秒后弹定位重启教学")
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    showRestartLocationGuide = true
+                                    DiagLog.add("[热切] 已弹出重启定位服务教学")
+                                }
+                            } else {
+                                DiagLog.add("[热切] 坐标确认超时,置 failed")
+                                spoofingState = .failed(reason: "坐标确认超时,请重试")
+                            }
                         }
                     } else {
-                        DiagLog.add("[热切] Go 就绪探测超时,置 failed")
+                        DiagLog.add("[热切] Go TCP 就绪探测超时,置 failed")
                         spoofingState = .failed(reason: "Go 代理就绪超时,请重试")
                     }
                 }
