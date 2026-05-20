@@ -3,7 +3,7 @@ import MapKit
 import NetworkExtension
 
 struct MapHomeView: View {
-    @State private var selectedFeature: MapFeature?
+    @State private var mapSelection: MapSelection<MKMapItem>?
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 39.9042, longitude: 116.4074),
@@ -32,7 +32,7 @@ struct MapHomeView: View {
         ZStack(alignment: .top) {
             // 全屏地图
             MapReader { proxy in
-                Map(position: $cameraPosition, selection: $selectedFeature) {
+                Map(position: $cameraPosition, selection: $mapSelection) {
                     if let coord = selectedCoordinate {
                         Marker("目标位置", coordinate: coord)
                             .tint(.red)
@@ -48,12 +48,8 @@ struct MapHomeView: View {
                         selectCoordinate(coordinate)
                     }
                 }
-                .onChange(of: selectedFeature) { _, newFeature in
-                    if let feature = newFeature {
-                        selectFeature(feature)
-                    }
-                    // 移除自动清空:让 SwiftUI 自己管理 selection 生命周期
-                    // 用户点别处会自然取消 selection,点同一 POI 会重新触发 onChange
+                .onChange(of: mapSelection) { _, newSelection in
+                    handleMapSelection(newSelection)
                 }
             }
 
@@ -457,36 +453,48 @@ struct MapHomeView: View {
         }
     }
 
-    private func selectFeature(_ feature: MapFeature) {
-        let coord = feature.coordinate
-        selectedCoordinate = coord
-        selectedLocationName = feature.title ?? "未知地点"
-        showLocationSheet = true
+    private func handleMapSelection(_ selection: MapSelection<MKMapItem>?) {
+        guard let selection else { return }
 
-        // 移动地图镜头到 POI 位置(轻微动画)
+        // 自定义 Marker 走 .value;POI 走 .feature
+        if let mapItem = selection.value {
+            applyMapItem(mapItem)
+            return
+        }
+        guard let feature = selection.feature else { return }
+
+        // POI:用 MKMapItemRequest 异步换成 MKMapItem,取 name + coordinate
+        Task { @MainActor in
+            do {
+                let mapItem = try await MKMapItemRequest(feature: feature).mapItem
+                applyMapItem(mapItem)
+            } catch {
+                // 兜底:直接用 feature 自带字段
+                applySelectedLocation(
+                    name: feature.title ?? "未知地点",
+                    coordinate: feature.coordinate
+                )
+            }
+        }
+    }
+
+    private func applyMapItem(_ mapItem: MKMapItem) {
+        applySelectedLocation(
+            name: mapItem.name ?? "未知地点",
+            coordinate: mapItem.placemark.coordinate
+        )
+    }
+
+    private func applySelectedLocation(name: String, coordinate: CLLocationCoordinate2D) {
+        selectedCoordinate = coordinate
+        selectedLocationName = name
+        showLocationSheet = true
         withAnimation {
             cameraPosition = .region(MKCoordinateRegion(
-                center: coord,
+                center: coordinate,
                 span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
             ))
         }
-
-        // 如果 feature.title 为 nil,用反向地理编码补名字
-        if feature.title == nil {
-            let geocoder = CLGeocoder()
-            let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            geocoder.reverseGeocodeLocation(location) { placemarks, _ in
-                if let placemark = placemarks?.first {
-                    let name = [placemark.name, placemark.locality]
-                        .compactMap { $0 }
-                        .joined(separator: ", ")
-                    DispatchQueue.main.async {
-                        self.selectedLocationName = name.isEmpty ? "未知地点" : name
-                    }
-                }
-            }
-        }
-
     }
 
     private func performSearch() {
