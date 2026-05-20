@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import NetworkExtension
+import Network
 
 /// 诊断面板用:把 NEVPNStatus 映射成可读字符串(带 rawValue)。
 private extension NEVPNStatus {
@@ -598,6 +599,66 @@ struct MapHomeView: View {
             recentLocations = Array(recentLocations.prefix(5))
         }
         saveRecentLocations()
+    }
+
+    /// 主动探测 NE Tunnel 进程内 Go 代理 (127.0.0.1:8888) 的 TCP 就绪状态。
+    /// 127.0.0.1 在 NEProxySettings 例外清单里(见 Tunnel/PacketTunnelProvider.swift),
+    /// 本次 connect 不会被代理拦截,直达 Tunnel 进程的 Go HTTP server。
+    /// 轮询每 0.3 秒,单次 connect 超时 1 秒(防 socket 挂在 preparing/waiting),
+    /// 总超时由参数控制;探到 .ready → completion(true),否则到总超时 → completion(false)。
+    private func probeGoProxyReady(timeout: TimeInterval, completion: @escaping (Bool) -> Void) {
+        let started = Date()
+        let deadline = started.addingTimeInterval(timeout)
+        DiagLog.add("[探测] 开始探测 Go 代理 127.0.0.1:8888(总超时 \(Int(timeout)) 秒)")
+
+        var attemptCount = 0
+        func attempt() {
+            attemptCount += 1
+            let myAttempt = attemptCount
+            let conn = NWConnection(host: "127.0.0.1", port: 8888, using: .tcp)
+            var settled = false
+
+            let retryOrFail: () -> Void = {
+                if Date() < deadline {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        attempt()
+                    }
+                } else {
+                    let elapsed = Date().timeIntervalSince(started)
+                    DiagLog.add("[探测] 第 \(myAttempt) 次 attempt 后到总超时,Go 就绪探测放弃(总耗时约 \(String(format: "%.2f", elapsed))s)")
+                    completion(false)
+                }
+            }
+
+            conn.stateUpdateHandler = { state in
+                guard !settled else { return }
+                switch state {
+                case .ready:
+                    settled = true
+                    let elapsed = Date().timeIntervalSince(started)
+                    DiagLog.add("[探测] 第 \(myAttempt) 次 attempt TCP .ready,Go 代理可用,总耗时约 \(String(format: "%.2f", elapsed))s")
+                    conn.cancel()
+                    completion(true)
+                case .failed, .cancelled:
+                    settled = true
+                    conn.cancel()
+                    retryOrFail()
+                default:
+                    break  // .setup / .waiting / .preparing 等中间态忽略,等 ready/failed/单次超时
+                }
+            }
+            conn.start(queue: .main)
+
+            // 单次 connect 1 秒兜底
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                guard !settled else { return }
+                settled = true
+                DiagLog.add("[探测] 第 \(myAttempt) 次 attempt 单次 1 秒超时,重试")
+                conn.cancel()
+                retryOrFail()
+            }
+        }
+        attempt()
     }
 
     /// 主动触发 VPN 连接(冷启动场景)。事件驱动等 .connected,然后给 Go 代理一段就绪缓冲再回调。
