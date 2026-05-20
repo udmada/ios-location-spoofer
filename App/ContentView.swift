@@ -56,9 +56,17 @@ struct ContentView: View {
             manager.saveToPreferences { error in
                 if let error = error {
                     completion(.failure(error))
-                } else {
-                    ContentView.vpnManager = manager
-                    completion(.success(manager))
+                    return
+                }
+                // save 完后必须再 load 一次,让内核把新配置真正绑到 manager 上,
+                // 否则立刻 startVPNTunnel 会拿到 stale config 报 NEVPNErrorDomain error 1。
+                manager.loadFromPreferences { error in
+                    if let error = error {
+                        completion(.failure(error))
+                    } else {
+                        ContentView.vpnManager = manager
+                        completion(.success(manager))
+                    }
                 }
             }
         }
