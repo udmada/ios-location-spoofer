@@ -544,11 +544,10 @@ struct MapHomeView: View {
                 }
             }
         } else {
-            // VPN 已连,直接弹教学
+            // VPN 已连:无感重启 tunnel,让 Network Extension 重读新坐标。
+            // 临时观察者驱动 stop→等disconnect→start→等connect 两阶段状态机,8 秒超时。
             showLocationSheet = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                showRestartLocationGuide = true
-            }
+            restartVPNForNewCoordinates()
         }
     }
 
@@ -596,6 +595,78 @@ struct MapHomeView: View {
             }
         } catch {
             completion(false, "VPN 启动失败:\(error.localizedDescription)")
+        }
+    }
+
+    /// VPN 已连状态下切换坐标,需要重启 tunnel 让 NE 重读新坐标。
+    /// 用临时独立的 NEVPNStatusDidChange 观察者驱动两阶段状态机:
+    /// 阶段0:stopVPNTunnel → 等 .disconnected;阶段1:startVPNTunnel → 等 .connected。
+    /// 8 秒超时兜底,finished token 防止超时与成功回调冲突。
+    /// 整个过程藏在 setAsLocation 已设的 pending 幕布后,成功才弹"重启定位服务"教学。
+    private func restartVPNForNewCoordinates() {
+        guard let manager = ContentView.vpnManager else {
+            spoofingState = .failed(reason: "VPN 配置未初始化,请重启 App")
+            return
+        }
+
+        var phase = 0
+        var finished = false
+        var observer: NSObjectProtocol?
+
+        let finish: (Bool, String?) -> Void = { ok, errMsg in
+            guard !finished else { return }
+            finished = true
+            if let observer = observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            if ok {
+                // 短暂过渡让状态卡的 pending→connected 视觉变化可见,再弹教学
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    showRestartLocationGuide = true
+                }
+            } else {
+                spoofingState = .failed(reason: errMsg ?? "VPN 重连失败")
+            }
+        }
+
+        observer = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: manager.connection,
+            queue: .main
+        ) { _ in
+            guard !finished else { return }
+            let status = manager.connection.status
+            switch (phase, status) {
+            case (0, .disconnected):
+                phase = 1
+                do {
+                    try manager.connection.startVPNTunnel()
+                } catch {
+                    finish(false, "VPN 启动失败:\(error.localizedDescription)")
+                }
+            case (1, .connected):
+                finish(true, nil)
+            default:
+                break  // 忽略 .connecting / .disconnecting / .reasserting 中间态
+            }
+        }
+
+        // 异常兜底:若进来时已是 disconnected(理论上 vpnConnected==true 保证不会),
+        // 直接跳阶段 1 启动 tunnel,否则触发 stop 等观察者推进。
+        if manager.connection.status == .disconnected {
+            phase = 1
+            do {
+                try manager.connection.startVPNTunnel()
+            } catch {
+                finish(false, "VPN 启动失败:\(error.localizedDescription)")
+            }
+        } else {
+            manager.connection.stopVPNTunnel()
+        }
+
+        // 8 秒超时
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
+            finish(false, "VPN 重连超时,请检查网络")
         }
     }
 
