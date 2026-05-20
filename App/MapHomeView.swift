@@ -598,10 +598,18 @@ struct MapHomeView: View {
         }
     }
 
+    /// 重连状态持有器:用 class 包住 phase/finished/observer,
+    /// 避免 var 被多个 closure 捕获时出现"初始化前捕获"的不稳定写法。
+    private final class RestartState {
+        var phase = 0
+        var finished = false
+        var observer: NSObjectProtocol?
+    }
+
     /// VPN 已连状态下切换坐标,需要重启 tunnel 让 NE 重读新坐标。
     /// 用临时独立的 NEVPNStatusDidChange 观察者驱动两阶段状态机:
     /// 阶段0:stopVPNTunnel → 等 .disconnected;阶段1:startVPNTunnel → 等 .connected。
-    /// 8 秒超时兜底,finished token 防止超时与成功回调冲突。
+    /// 8 秒超时兜底,RestartState.finished token 防止超时与成功回调冲突。
     /// 整个过程藏在 setAsLocation 已设的 pending 幕布后,成功才弹"重启定位服务"教学。
     private func restartVPNForNewCoordinates() {
         guard let manager = ContentView.vpnManager else {
@@ -609,14 +617,12 @@ struct MapHomeView: View {
             return
         }
 
-        var phase = 0
-        var finished = false
-        var observer: NSObjectProtocol?
+        let state = RestartState()
 
         let finish: (Bool, String?) -> Void = { ok, errMsg in
-            guard !finished else { return }
-            finished = true
-            if let observer = observer {
+            guard !state.finished else { return }
+            state.finished = true
+            if let observer = state.observer {
                 NotificationCenter.default.removeObserver(observer)
             }
             if ok {
@@ -629,16 +635,21 @@ struct MapHomeView: View {
             }
         }
 
-        observer = NotificationCenter.default.addObserver(
+        // object: nil 全接收,closure 内部用 === 身份过滤;
+        // 避免真机上因 object 过滤导致收不到 NEVPNStatusDidChange 而一直超时。
+        state.observer = NotificationCenter.default.addObserver(
             forName: .NEVPNStatusDidChange,
-            object: manager.connection,
+            object: nil,
             queue: .main
-        ) { _ in
-            guard !finished else { return }
+        ) { notification in
+            guard !state.finished else { return }
+            // 只处理来自当前 manager.connection 的事件
+            guard let conn = notification.object as? NEVPNConnection,
+                  conn === manager.connection else { return }
             let status = manager.connection.status
-            switch (phase, status) {
+            switch (state.phase, status) {
             case (0, .disconnected):
-                phase = 1
+                state.phase = 1
                 do {
                     try manager.connection.startVPNTunnel()
                 } catch {
@@ -654,7 +665,7 @@ struct MapHomeView: View {
         // 异常兜底:若进来时已是 disconnected(理论上 vpnConnected==true 保证不会),
         // 直接跳阶段 1 启动 tunnel,否则触发 stop 等观察者推进。
         if manager.connection.status == .disconnected {
-            phase = 1
+            state.phase = 1
             do {
                 try manager.connection.startVPNTunnel()
             } catch {
