@@ -25,6 +25,11 @@ extension DiagEntry {
 final class DiagLog: ObservableObject {
     static let shared = DiagLog()
 
+    /// 静态便捷调用,等价于 DiagLog.shared.add(msg);埋点处可写成 DiagLog.add("...")。
+    static func add(_ message: String) {
+        shared.add(message)
+    }
+
     @Published private(set) var entries: [DiagEntry] = []
 
     private let maxEntries = 100
