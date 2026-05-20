@@ -149,6 +149,15 @@ func golocationspoofer_stopproxy(h C.uintptr_t) C.int {
 	return 0
 }
 
+//export golocationspoofer_getcoords
+func golocationspoofer_getcoords() (lat, lon C.double, enabled C.int) {
+	var e C.int = 0
+	if spoofingEnabled {
+		e = 1
+	}
+	return C.double(spoofLat), C.double(spoofLon), e
+}
+
 func setupMITM(proxy *goproxy.ProxyHttpServer, cert *tls.Certificate) {
 	customCaMitm := &goproxy.ConnectAction{
 		Action:    goproxy.ConnectMitm,
