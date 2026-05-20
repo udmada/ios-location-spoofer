@@ -541,7 +541,7 @@ struct MapHomeView: View {
                     // VPN 连上后,弹出"重启定位服务"教学
                     DispatchQueue.main.async {
                         showLocationSheet = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             showRestartLocationGuide = true
                         }
                     }
@@ -556,7 +556,7 @@ struct MapHomeView: View {
         } else {
             // VPN 已连,直接弹教学
             showLocationSheet = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 showRestartLocationGuide = true
             }
         }
