@@ -28,14 +28,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let version = goLocationSpoofer?.version() ?? "unknown"
         os_log("Go spoofer library version: %@", log: OSLog.default, type: .info, version)
 
-        let coords = getSpoofedCoordinates()
-        if let lat = coords.latitude, let lon = coords.longitude {
+        let coords = configuration.currentCoordinates
+        let lat = coords?.latitude
+        let lon = coords?.longitude
+        if let lat = lat, let lon = lon {
             os_log("Location spoofing active: %.6f, %.6f", log: OSLog.default, type: .info, lat, lon)
         } else {
             os_log("No coordinates configured - running in transparent mode", log: OSLog.default, type: .info)
         }
 
-        guard let proxy = goLocationSpoofer, proxy.startProxy(lat: coords.latitude, lon: coords.longitude) else {
+        guard let proxy = goLocationSpoofer, proxy.startProxy(lat: lat, lon: lon) else {
             let error = TunnelError.proxyServerFailed
             os_log("Failed to start Go location spoofing proxy", log: OSLog.default, type: .error)
             completionHandler(error)
@@ -44,18 +46,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
         os_log("Go proxy started successfully", log: OSLog.default, type: .info)
         startTunnelWithProxy(completionHandler: completionHandler)
-    }
-
-    private func getSpoofedCoordinates() -> (latitude: Double?, longitude: Double?) {
-        let suiteName = "group.com.whitemirror.location-spoofer"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            return (nil, nil)
-        }
-        
-        let lat = defaults.object(forKey: "spoofed_latitude") as? Double
-        let lon = defaults.object(forKey: "spoofed_longitude") as? Double
-        
-        return (lat, lon)
     }
 
     private func startTunnelWithProxy(completionHandler: @escaping (Error?) -> Void) {
