@@ -579,25 +579,68 @@ struct MapHomeView: View {
         saveRecentLocations()
     }
 
-    /// 主动触发 VPN 连接,返回是否成功
+    /// 主动触发 VPN 连接(冷启动场景)。事件驱动等 .connected,然后给 Go 代理一段就绪缓冲再回调。
+    /// 复用 RestartState 持有 observer/finished;object: nil 全接收 + 身份过滤;30 秒超时。
+    /// 关键:NE status == .connected 不代表 Go 代理 127.0.0.1:8888 已 ListenAndServe,
+    /// 所以 .connected 后再延迟 2 秒,确保用户重启定位服务时代理已经能接请求。
     private func connectVPNForSpoofing(completion: @escaping (Bool, String?) -> Void) {
         guard let manager = ContentView.vpnManager else {
             completion(false, "VPN 配置未初始化,请重启 App")
             return
         }
+
+        let state = RestartState()
+
+        let finish: (Bool, String?) -> Void = { ok, errMsg in
+            guard !state.finished else { return }
+            state.finished = true
+            if let observer = state.observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            if ok {
+                // 给 Go 代理一段 ListenAndServe 就绪缓冲再回调
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    completion(true, nil)
+                }
+            } else {
+                completion(false, errMsg ?? "VPN 启动失败")
+            }
+        }
+
+        state.observer = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard !state.finished else { return }
+            guard let conn = notification.object as? NEVPNConnection,
+                  conn === manager.connection else { return }
+            switch manager.connection.status {
+            case .connected:
+                finish(true, nil)
+            case .invalid:
+                finish(false, "VPN 配置失效,请重试")
+            default:
+                break  // 忽略 .connecting / .disconnecting / .disconnected / .reasserting 中间态
+            }
+        }
+
+        // 兜底:进来时已是 .connected(罕见,但不接住会被 30 秒超时拖死)
+        if manager.connection.status == .connected {
+            finish(true, nil)
+            return
+        }
+
         do {
             try manager.connection.startVPNTunnel()
-            // 等待 3 秒看 VPN 是否真的连上
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                let connected = (manager.connection.status == .connected)
-                if connected {
-                    completion(true, nil)
-                } else {
-                    completion(false, "VPN 连接超时,请检查网络")
-                }
-            }
         } catch {
-            completion(false, "VPN 启动失败:\(error.localizedDescription)")
+            finish(false, "VPN 启动失败:\(error.localizedDescription)")
+            return
+        }
+
+        // 30 秒超时(与 restartVPNForNewCoordinates 保持一致)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
+            finish(false, "VPN 连接超时,请重试")
         }
     }
 
