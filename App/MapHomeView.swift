@@ -648,7 +648,7 @@ struct MapHomeView: View {
                   conn === manager.connection else { return }
             let status = manager.connection.status
             switch (state.phase, status) {
-            case (0, .disconnected):
+            case (0, .disconnected), (0, .invalid):
                 state.phase = 1
                 do {
                     try manager.connection.startVPNTunnel()
@@ -664,7 +664,7 @@ struct MapHomeView: View {
 
         // 异常兜底:若进来时已是 disconnected(理论上 vpnConnected==true 保证不会),
         // 直接跳阶段 1 启动 tunnel,否则触发 stop 等观察者推进。
-        if manager.connection.status == .disconnected {
+        if manager.connection.status == .disconnected || manager.connection.status == .invalid {
             state.phase = 1
             do {
                 try manager.connection.startVPNTunnel()
@@ -675,8 +675,8 @@ struct MapHomeView: View {
             manager.connection.stopVPNTunnel()
         }
 
-        // 8 秒超时
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
+        // 30 秒超时(放宽以适应 GoSpoofer 关闭 drain 与真机 NE 切换的真实耗时)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
             finish(false, "VPN 重连超时,请检查网络")
         }
     }
