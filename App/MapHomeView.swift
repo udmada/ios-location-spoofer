@@ -767,11 +767,18 @@ struct MapHomeView: View {
                 NotificationCenter.default.removeObserver(observer)
             }
             if ok {
-                DiagLog.add("[热切] 重连成功,0.3 秒后弹定位重启教学")
-                // 短暂过渡让状态卡的 pending→connected 视觉变化可见,再弹教学
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    showRestartLocationGuide = true
-                    DiagLog.add("[热切] 已弹出重启定位服务教学")
+                DiagLog.add("[热切] VPN 已重连,启动 Go 代理就绪探测(总超时 10 秒)")
+                probeGoProxyReady(timeout: 10) { ready in
+                    if ready {
+                        DiagLog.add("[热切] Go 就绪,0.3 秒后弹定位重启教学")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showRestartLocationGuide = true
+                            DiagLog.add("[热切] 已弹出重启定位服务教学")
+                        }
+                    } else {
+                        DiagLog.add("[热切] Go 就绪探测超时,置 failed")
+                        spoofingState = .failed(reason: "Go 代理就绪超时,请重试")
+                    }
                 }
             } else {
                 DiagLog.add("[热切] finish 失败:\(errMsg ?? "VPN 重连失败")")
