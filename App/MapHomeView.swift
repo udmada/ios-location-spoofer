@@ -523,7 +523,7 @@ struct MapHomeView: View {
         UserDefaults.standard.set(name, forKey: "currentLocationName")
         currentLocationName = name
 
-        // 添加到"最近使用"(批 C 用,目前先写好接口)
+        // 收藏/最近存原始 GCJ-02 坐标(用于显示和地图回显),设为定位时才在 setAsLocation 内转 WGS-84
         addToRecentLocations(name: name, latitude: coord.latitude, longitude: coord.longitude)
 
         // 检查 VPN 状态,需要时自动连
