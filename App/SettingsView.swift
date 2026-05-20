@@ -4,8 +4,8 @@ import NetworkExtension
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showResetConfirm = false
-    @State private var diagnosticText: String = ""
     @State private var showCopiedToast = false
+    @ObservedObject private var diagLog = DiagLog.shared
 
     var body: some View {
         NavigationView {
@@ -31,15 +31,40 @@ struct SettingsView: View {
                     diagnosticRow(label: "VPN 状态", value: vpnStatusText)
                     diagnosticRow(label: "证书状态", value: certificateStatusText)
                     diagnosticRow(label: "当前虚拟定位", value: currentLocationText)
+                    diagnosticRow(label: "当前坐标", value: currentCoordinatesText)
                     diagnosticRow(label: "首次配置", value: setupCompletedText)
 
                     Button(action: { copyDiagnostic() }) {
                         HStack {
                             Image(systemName: "doc.on.doc")
-                            Text(showCopiedToast ? "已复制" : "复制诊断信息")
+                            Text(showCopiedToast ? "已复制" : "复制诊断信息(含流程日志)")
                             Spacer()
                         }
                         .foregroundColor(showCopiedToast ? .green : .blue)
+                    }
+                }
+
+                // 流程日志
+                Section(header: HStack {
+                    Text("流程日志(最近 \(diagLog.entries.count) 条)")
+                    Spacer()
+                    Button("清空") { diagLog.clear() }
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .disabled(diagLog.entries.isEmpty)
+                }) {
+                    if diagLog.entries.isEmpty {
+                        Text("暂无日志。操作一次「设为定位」后回来查看。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(diagLog.entries.reversed()) { entry in
+                            Text(entry.formatted)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
 
@@ -119,11 +144,22 @@ struct SettingsView: View {
         UserDefaults.standard.string(forKey: "currentLocationName") ?? "无"
     }
 
+    private var currentCoordinatesText: String {
+        guard let coords = LocationConfiguration.shared.currentCoordinates else {
+            return "无"
+        }
+        return String(format: "%.6f, %.6f", coords.latitude, coords.longitude)
+    }
+
     private var setupCompletedText: String {
         UserDefaults.standard.bool(forKey: "firstSetupCompleted") ? "已完成" : "未完成"
     }
 
     private func copyDiagnostic() {
+        let logBlock = diagLog.entries.isEmpty
+            ? "(无日志)"
+            : diagLog.entries.map { $0.formatted }.joined(separator: "\n")
+
         let info = """
         任意门诊断信息
         ─────────────
@@ -132,7 +168,11 @@ struct SettingsView: View {
         VPN 状态:\(vpnStatusText)
         证书状态:\(certificateStatusText)
         当前虚拟定位:\(currentLocationText)
+        当前坐标:\(currentCoordinatesText)
         首次配置:\(setupCompletedText)
+
+        ─── 流程日志 ───
+        \(logBlock)
         """
         UIPasteboard.general.string = info
         showCopiedToast = true
@@ -157,6 +197,8 @@ struct SettingsView: View {
         for key in keys {
             UserDefaults.standard.removeObject(forKey: key)
         }
+        // 清诊断日志
+        DiagLog.shared.clear()
         dismiss()
     }
 }
