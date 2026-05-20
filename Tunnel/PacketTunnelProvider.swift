@@ -128,7 +128,26 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
-        if let handler = completionHandler {
+        guard let handler = completionHandler else { return }
+        let cmd = String(data: messageData, encoding: .utf8) ?? ""
+        switch cmd {
+        case "getCoords":
+            // 17 字节定长回包:1 字节 enabled + 8 字节 lat (LE) + 8 字节 lon (LE)。
+            // App 端按相同格式解;两端都在 iOS arm64 上,统一小端无跨架构问题。
+            guard let proxy = goLocationSpoofer,
+                  let coords = proxy.getCurrentCoords() else {
+                handler(nil)
+                return
+            }
+            var resp = Data()
+            resp.append(coords.enabled ? 1 : 0)
+            var lat = coords.lat
+            var lon = coords.lon
+            withUnsafeBytes(of: &lat) { resp.append(contentsOf: $0) }
+            withUnsafeBytes(of: &lon) { resp.append(contentsOf: $0) }
+            handler(resp)
+        default:
+            // 未知命令保持原 echo 行为,兼容潜在旧调用方
             handler(messageData)
         }
     }
