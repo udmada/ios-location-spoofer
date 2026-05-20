@@ -167,6 +167,10 @@ struct FirstSetupView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
+                Text("如果 Safari 提示证书已存在,或直接跳转到了「信任设置」界面,说明证书已安装,关闭 Safari 直接进入下一步即可。")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
             }
         case .trust:
             VStack(alignment: .leading, spacing: 14) {
