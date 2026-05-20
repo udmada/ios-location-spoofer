@@ -3,8 +3,6 @@ import NetworkExtension
 import os.log
 
 struct ContentView: View {
-    @State private var showingInstallationAlert = false
-    @State private var installationError: String?
     @State private var firstSetupCompleted: Bool = UserDefaults.standard.bool(forKey: "firstSetupCompleted")
 
     var body: some View {
@@ -16,7 +14,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            installVPNIfNeeded()
+            loadVPNManagerIfExists()
             // 监听 firstSetupCompleted 变化(FirstSetupView 完成 setup 后会写 UserDefaults)
             NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
                 let newValue = UserDefaults.standard.bool(forKey: "firstSetupCompleted")
@@ -25,27 +23,28 @@ struct ContentView: View {
                 }
             }
         }
-        .alert("VPN 安装", isPresented: $showingInstallationAlert) {
-            Button("确定") { }
-        } message: {
-            Text(installationError ?? "")
+    }
+
+    /// 进 App 时只加载已存在的 VPN 配置,不创建、不弹权限。
+    /// 没装过的用户会在 FirstSetupView 点【授权VPN】时再走 installAndStartVPN。
+    private func loadVPNManagerIfExists() {
+        NETunnelProviderManager.loadAllFromPreferences { managers, _ in
+            if let existing = managers?.first {
+                ContentView.vpnManager = existing
+            }
         }
     }
 
-    private func installVPNIfNeeded() {
+    /// 创建/复用 manager,写入 protocol 配置并 saveToPreferences。
+    /// save 成功通过 completion 回传 manager,失败回传 error。调用方负责后续 startVPNTunnel。
+    static func installAndStartVPN(completion: @escaping (Result<NETunnelProviderManager, Error>) -> Void) {
         NETunnelProviderManager.loadAllFromPreferences { managers, error in
             if let error = error {
-                installationError = "加载 VPN 配置失败:\(error.localizedDescription)"
-                showingInstallationAlert = true
+                completion(.failure(error))
                 return
             }
 
-            let manager: NETunnelProviderManager
-            if let existing = managers?.first {
-                manager = existing
-            } else {
-                manager = NETunnelProviderManager()
-            }
+            let manager = managers?.first ?? NETunnelProviderManager()
 
             let proto = NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "com.whitemirror.location-spoofer.tunnel"
@@ -56,10 +55,10 @@ struct ContentView: View {
 
             manager.saveToPreferences { error in
                 if let error = error {
-                    installationError = "保存 VPN 配置失败:\(error.localizedDescription)"
-                    showingInstallationAlert = true
+                    completion(.failure(error))
                 } else {
                     ContentView.vpnManager = manager
+                    completion(.success(manager))
                 }
             }
         }
