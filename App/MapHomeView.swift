@@ -66,24 +66,6 @@ struct MapHomeView: View {
                 searchBar
             }
             .allowsHitTesting(true)
-
-            // 右上角齿轮(主界面所有覆盖元素的最后一项)
-            VStack {
-                HStack {
-                    Spacer()
-                    Button(action: { showSettings = true }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3)
-                            .foregroundColor(.primary)
-                            .padding(10)
-                            .background(.regularMaterial)
-                            .clipShape(Circle())
-                    }
-                    .padding(.top, 8)
-                    .padding(.trailing, 12)
-                }
-                Spacer()
-            }
         }
         .sheet(isPresented: $showLocationSheet) {
             locationSheet
@@ -246,6 +228,14 @@ struct MapHomeView: View {
                 Image(systemName: "star.fill")
                     .font(.title3)
                     .foregroundColor(.yellow)
+                    .padding(12)
+                    .background(.regularMaterial)
+                    .clipShape(Circle())
+            }
+            Button(action: { showSettings = true }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.title3)
+                    .foregroundColor(.primary)
                     .padding(12)
                     .background(.regularMaterial)
                     .clipShape(Circle())
