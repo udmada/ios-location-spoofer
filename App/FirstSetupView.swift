@@ -1,20 +1,21 @@
 import SwiftUI
 import NetworkExtension
 
-/// 首次配置的 3 个步骤
+/// 首次配置的 3 步(对外仍是 3 步,证书内部拆成"下载"和"安装"两屏)
 enum SetupStep: Int, CaseIterable {
     case welcome = 0  // 欢迎页
     case vpn = 1      // 步骤 1:VPN 权限
-    case cert = 2     // 步骤 2:证书安装
-    case trust = 3    // 步骤 3:证书信任
-    case done = 4     // 完成页
+    case cert = 2     // 步骤 2a:下载证书(唤起 Safari)
+    case install = 3  // 步骤 2b:安装描述文件
+    case trust = 4    // 步骤 3:证书信任
+    case done = 5     // 完成页
 
-    /// 进度条:步骤 1/2/3 时显示进度,welcome 和 done 不显示
+    /// 进度条:welcome 和 done 不显示;.cert 和 .install 合并算步骤 2,.trust 算步骤 3。
     var progressIndex: Int? {
         switch self {
         case .welcome, .done: return nil
         case .vpn: return 1
-        case .cert: return 2
+        case .cert, .install: return 2
         case .trust: return 3
         }
     }
@@ -24,6 +25,7 @@ enum SetupStep: Int, CaseIterable {
         case .welcome: return ""
         case .vpn: return "授权 VPN"
         case .cert: return "下载证书"
+        case .install: return "安装描述文件"
         case .trust: return "信任证书"
         case .done: return ""
         }
@@ -44,7 +46,7 @@ struct FirstSetupView: View {
             case .welcome:
                 welcomeView
                     .transition(.opacity)
-            case .vpn, .cert, .trust:
+            case .vpn, .cert, .install, .trust:
                 progressView
                     .transition(.opacity)
             case .done:
@@ -172,6 +174,18 @@ struct FirstSetupView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
+        case .install:
+            VStack(alignment: .leading, spacing: 14) {
+                Text("证书下载完后,请按以下步骤安装:")
+                    .font(.body)
+                Text("① 打开 iPhone「设置」")
+                Text("② 顶部会出现「已下载描述文件」,点击进入")
+                Text("③ 右上角点「安装」,按提示输入手机密码")
+                Text("④ 安装完成后回到本页面")
+                    .font(.body)
+                    .foregroundColor(.blue)
+                    .padding(.top, 8)
+            }
         case .trust:
             VStack(alignment: .leading, spacing: 14) {
                 Text("证书下载后,需要手动信任:")
@@ -216,6 +230,16 @@ struct FirstSetupView: View {
                     .cornerRadius(12)
             }
             .disabled(isProcessing)
+        case .install:
+            Button(action: { currentStep = .trust }) {
+                Text("我已安装,下一步")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+            }
         case .trust:
             Button(action: { confirmTrust() }) {
                 Text("我已完成信任设置")
@@ -308,9 +332,9 @@ struct FirstSetupView: View {
             DispatchQueue.main.async {
                 isProcessing = false
                 if success {
-                    // Safari 已唤起,等用户从 Safari 回来后,自动到 trust 步骤
+                    // Safari 已唤起,等用户从 Safari 回来后,先到"安装描述文件"步骤
                     UserDefaults.standard.set(true, forKey: "certDownloaded")
-                    currentStep = .trust
+                    currentStep = .install
                 } else {
                     errorMessage = errMsg ?? "证书安装唤起失败"
                 }
