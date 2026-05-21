@@ -37,6 +37,7 @@ struct FirstSetupView: View {
     @State private var errorMessage: String? = nil
     @State private var isProcessing: Bool = false
     @State private var showInstallConfirm: Bool = false
+    @State private var showTrustConfirm: Bool = false
 
     /// 配置完成回调,由 ContentView 监听 firstSetupCompleted 变化即可,这里不必显式传
 
@@ -66,6 +67,12 @@ struct FirstSetupView: View {
             Button("去安装", role: .cancel) { }
         } message: {
             Text("请确认你已在「设置→通用→VPN与设备管理」中完成了描述文件的安装。如果还没安装,请先去系统设置完成安装再点确认。")
+        }
+        .alert("确认证书已信任", isPresented: $showTrustConfirm) {
+            Button("已完成信任") { confirmTrust() }
+            Button("去设置", role: .cancel) { }
+        } message: {
+            Text("请确认你已在「设置→通用→关于本机→证书信任设置」中打开了「Location Spoofer CA」的开关。如果还没信任,请先去系统设置完成再点确认。")
         }
     }
 
@@ -248,7 +255,7 @@ struct FirstSetupView: View {
                     .cornerRadius(12)
             }
         case .trust:
-            Button(action: { confirmTrust() }) {
+            Button(action: { showTrustConfirm = true }) {
                 Text("我已完成信任设置")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
