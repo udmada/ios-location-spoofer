@@ -1,7 +1,7 @@
 package main
 
 import (
-	// "bytes"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -9,10 +9,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
-	// "encoding/hex"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	// "io"
+	"io"
 	"log"
 	"math/big"
 	"net/http"
@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/elazarl/goproxy"
-	// pb "golocationspoofer/pb"
+	pb "golocationspoofer/pb"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -239,11 +239,81 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("PANIC in handleLocationRequest: %v", r)
-			logEvent(fmt.Sprintf("PANIC: %v", r))
+			logEvent(fmt.Sprintf("PANIC in handleLocationRequest: %v", r))
 		}
 	}()
-	logEvent(fmt.Sprintf("基线测试:纯透传 Host=%s Path=%s Method=%s,不改写直接返回", req.Host, req.URL.Path, req.Method))
-	return req, nil
+
+	logEvent(fmt.Sprintf("收到定位请求 Host=%s Path=%s Method=%s", req.Host, req.URL.Path, req.Method))
+
+	body, err := io.ReadAll(req.Body)
+	req.Body.Close()
+	if err != nil {
+		log.Printf("Failed to read request body: %v", err)
+		logEvent(fmt.Sprintf("读请求体失败: %v,return req,nil 透传", err))
+		return req, nil
+	}
+	logEvent(fmt.Sprintf("已读请求体 length=%d bytes", len(body)))
+
+	arpc := ArpcDeserialize(body)
+	if arpc == nil {
+		logEvent("ArpcDeserialize 返回 nil(可能 gzip/版本不兼容),return req,nil 透传")
+		return req, nil
+	}
+	logEvent(fmt.Sprintf("ARPC 解析成功 version=%s payloadLen=%d", arpc.Version, len(arpc.Payload)))
+
+	wloc := &pb.AppleWLoc{}
+	if err := proto.Unmarshal(arpc.Payload, wloc); err != nil {
+		log.Printf("Failed to unmarshal protobuf: %v", err)
+		logEvent(fmt.Sprintf("protobuf Unmarshal 失败: %v,return req,nil 透传", err))
+		return req, nil
+	}
+
+	wifiCount := len(wloc.WifiDevices)
+	log.Printf("Spoofing location for %d WiFi devices", wifiCount)
+	logEvent(fmt.Sprintf("已解析 AppleWLoc wifiCount=%d", wifiCount))
+
+	// wifiCount==0 的空请求(iOS 重启定位服务后的纯探测请求等),不改写直接透传给真 Apple。
+	if wifiCount == 0 {
+		logEvent("wifiCount=0,空请求透传不改写")
+		return req, nil
+	}
+
+	logEvent("最小改写实验:只改 lat/lon,保留 horizontalAccuracy/verticalAccuracy/altitude 等其他字段原值;不抹 NumCellResults/NumWifiResults/DeviceType 三字段")
+
+	lat := IntFromCoord(spoofLat)
+	lon := IntFromCoord(spoofLon)
+
+	for _, device := range wloc.WifiDevices {
+		if device.Location == nil {
+			device.Location = &pb.Location{}
+		}
+		device.Location.Latitude = &lat
+		device.Location.Longitude = &lon
+	}
+	logEvent(fmt.Sprintf("已改写 %d 个 WiFi 设备的 lat/lon 为 spoof 坐标 (%.6f, %.6f)", wifiCount, spoofLat, spoofLon))
+
+	initialBytes, _ := hex.DecodeString("0001000000010000")
+	responseBytes, err := SerializeProto(wloc, initialBytes)
+	if err != nil {
+		log.Printf("Failed to serialize protobuf: %v", err)
+		logEvent(fmt.Sprintf("SerializeProto 失败: %v,return req,nil 透传", err))
+		return req, nil
+	}
+
+	resp := &http.Response{
+		Request:       req,
+		StatusCode:    http.StatusOK,
+		Status:        "200 OK",
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(bytes.NewReader(responseBytes)),
+		ContentLength: int64(len(responseBytes)),
+	}
+	resp.Header.Set("Content-Type", "application/octet-stream")
+	logEvent(fmt.Sprintf("回响应 200 OK respLen=%d wifiCount=%d", len(responseBytes), wifiCount))
+	return req, resp
 }
 
 func generateCA() (certPEM, keyPEM []byte, err error) {
