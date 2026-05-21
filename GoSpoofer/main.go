@@ -274,11 +274,6 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	log.Printf("Spoofing location for %d WiFi devices", wifiCount)
 	logEvent(fmt.Sprintf("已解析 AppleWLoc wifiCount=%d", wifiCount))
 
-	if wifiCount == 0 {
-		logEvent("wifiCount=0,空请求透传不改写")
-		return req, nil
-	}
-
 	// raw wire 递归 splice:只动 Location.Latitude(tag 1 varint)/Longitude(tag 2 varint)的字节,
 	// 其他所有字段(HorizontalAccuracy/Altitude/未知 tag/NumCellResults/DeviceType 等)wire 字节级保留。
 	lat := IntFromCoord(spoofLat)
