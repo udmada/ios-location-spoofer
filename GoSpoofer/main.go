@@ -272,6 +272,14 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	log.Printf("Spoofing location for %d WiFi devices", wifiCount)
 	logEvent(fmt.Sprintf("已解析 AppleWLoc wifiCount=%d", wifiCount))
 
+	// wifiCount==0 的空请求(iOS 重启定位服务后的纯探测请求等),不改写直接透传给真 Apple。
+	// 我们对空请求强行序列化会产出 35 字节残废响应(magic 头+空 wloc),iOS 收到后整次定位失败,
+	// 后续带 WiFi 的请求也救不回——表现为"时好时坏"。透传让 Apple 返回真实响应,流程不被毒化。
+	if wifiCount == 0 {
+		logEvent("wifiCount=0,空请求透传不改写")
+		return req, nil
+	}
+
 	lat := IntFromCoord(spoofLat)
 	lon := IntFromCoord(spoofLon)
 	horizontalAccuracy := int64(39)
