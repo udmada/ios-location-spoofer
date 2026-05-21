@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	// "bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -9,10 +9,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
-	"encoding/hex"
+	// "encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"io"
+	// "io"
 	"log"
 	"math/big"
 	"net/http"
@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/elazarl/goproxy"
-	pb "golocationspoofer/pb"
+	// pb "golocationspoofer/pb"
 	"google.golang.org/protobuf/proto"
 )
 
