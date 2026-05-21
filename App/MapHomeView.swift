@@ -127,7 +127,7 @@ struct MapHomeView: View {
     @State private var lastKnownUserCoord: CLLocationCoordinate2D? = nil
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             // 全屏地图
             MapReader { proxy in
                 Map(position: $cameraPosition, selection: $mapSelection) {
@@ -141,8 +141,7 @@ struct MapHomeView: View {
                 .mapFeatureSelectionAccessory(.automatic)
                 .ignoresSafeArea()
                 .onTapGesture(coordinateSpace: .global) { tapLocation in
-                    // 空白点击才取坐标。注意:Map 的 POI 内置选中由 selection 绑定处理,
-                    // 这个 onTapGesture 只在点击空白时触发(POI 点击会先被 Map 消化)
+                    // 空白点击才取坐标(POI 内置选中由 selection 绑定处理)
                     if let coordinate = proxy.convert(tapLocation, from: .global) {
                         selectCoordinate(coordinate)
                     }
@@ -152,16 +151,9 @@ struct MapHomeView: View {
                 }
             }
 
-            // 顶部状态条
-            VStack {
-                statusBar
-                Spacer().allowsHitTesting(false)
-            }
-            .allowsHitTesting(true)
-
-            // 底部搜索栏
-            VStack {
-                Spacer().allowsHitTesting(false)
+            // 底部叠层:右下角"回到我的位置"按钮 + 底部卡片
+            VStack(spacing: 0) {
+                Spacer()
                 HStack {
                     Spacer()
                     if let userCoord = lastKnownUserCoord {
@@ -185,37 +177,9 @@ struct MapHomeView: View {
                 }
                 .padding(.trailing, 12)
                 .padding(.bottom, 8)
-                // 输入联想列表(最多 5 条,搜索框非空且有结果时显示)
-                if !searchCompleter.results.isEmpty && !searchText.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(searchCompleter.results.prefix(5), id: \.self) { completion in
-                            Button(action: { selectCompletion(completion) }) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(completion.title)
-                                        .font(.body)
-                                        .foregroundColor(.primary)
-                                    if !completion.subtitle.isEmpty {
-                                        Text(completion.subtitle)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                            }
-                            .buttonStyle(.plain)
-                            Divider().padding(.leading, 14)
-                        }
-                    }
-                    .background(.regularMaterial)
-                    .cornerRadius(12)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                }
-                searchBar
+
+                bottomCard
             }
-            .allowsHitTesting(true)
         }
         .sheet(isPresented: $showLocationSheet) {
             locationSheet
@@ -261,7 +225,6 @@ struct MapHomeView: View {
             if !savedName.isEmpty && vpnConnected {
                 spoofingState = .on(name: savedName)
             } else if !savedName.isEmpty && !vpnConnected {
-                // 有坐标但 VPN 没连 → 等同 off
                 spoofingState = .off
             } else {
                 spoofingState = .off
@@ -271,42 +234,118 @@ struct MapHomeView: View {
             }
         }
     }
-
     // MARK: - 子视图
 
-    private var statusBar: some View {
-        HStack(spacing: 12) {
-            // 圆点
-            Circle()
-                .fill(indicatorColor)
-                .frame(width: 10, height: 10)
 
-            // 文案
-            VStack(alignment: .leading, spacing: 2) {
-                Text(spoofingState.primaryText)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                if let sub = spoofingState.subText {
-                    Text(sub)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+    // 底部卡片:搜索栏 + 输入联想 + 状态信息 + 主操作。
+    // 顶圆角 + .regularMaterial 背景 + 阴影,底部贴屏幕边(ignoresSafeArea bottom)。
+    private var bottomCard: some View {
+        VStack(spacing: 12) {
+            searchBar
+            if !searchCompleter.results.isEmpty && !searchText.isEmpty {
+                suggestionsList
             }
-
-            Spacer()
-
-            // 主操作按钮
-            actionButton
+            statusSection
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .cornerRadius(12)
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
+        .background {
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
+                .fill(.regularMaterial)
+                .ignoresSafeArea(edges: .bottom)
+                .shadow(color: .black.opacity(0.1), radius: 8, y: -4)
+        }
     }
 
+    // 搜索联想列表(原本在 body,移到 bottomCard 内)
+    private var suggestionsList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(searchCompleter.results.prefix(5), id: \.self) { completion in
+                Button(action: { selectCompletion(completion) }) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(completion.title)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                        if !completion.subtitle.isEmpty {
+                            Text(completion.subtitle)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+                Divider().padding(.leading, 14)
+            }
+        }
+        .background(Color(UIColor.systemBackground).opacity(0.4))
+        .cornerRadius(12)
+        .padding(.horizontal, 12)
+    }
+
+    // 状态信息(圆点+文案)+ 主操作(.on 关闭定位 / .failed 重试)
+    private var statusSection: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(indicatorColor)
+                    .frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusPrimaryText)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                    if let sub = statusSubText {
+                        Text(sub)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+            }
+
+            if case .on = spoofingState {
+                Button(action: { showDisableGuide = true }) {
+                    Text("关闭定位")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(14)
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+            } else if case .failed = spoofingState {
+                Button(action: { spoofingState = .off }) {
+                    Text("重试")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(14)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // 状态文案(MapHomeView 内重写,不动 SpoofingState.swift)
+    private var statusPrimaryText: String {
+        switch spoofingState {
+        case .off: return "选择位置开始虚拟定位"
+        case .pending(_, let isClosing): return isClosing ? "正在关闭..." : "正在生效中..."
+        case .on(let name): return "已开启:\(name)"
+        case .failed(let reason): return "失败:\(reason)"
+        }
+    }
+
+    private var statusSubText: String? {
+        if case .pending = spoofingState { return "请重启定位服务" }
+        return nil
+    }
     private var indicatorColor: Color {
         switch spoofingState {
         case .off:      return .gray
@@ -316,54 +355,6 @@ struct MapHomeView: View {
         }
     }
 
-    @ViewBuilder
-    private var actionButton: some View {
-        switch spoofingState {
-        case .off:
-            EmptyView()
-        case .pending(_, let isClosing):
-            Button(action: {
-                // 取消 pending,根据 isClosing 决定回到哪个状态
-                if isClosing {
-                    // 取消关闭,恢复 on(如果还能找到原位置名)
-                    let name = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
-                    spoofingState = name.isEmpty ? .off : .on(name: name)
-                } else {
-                    // 取消开启
-                    spoofingState = .off
-                }
-            }) {
-                Text("取消")
-                    .font(.caption)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.gray.opacity(0.15))
-                    .foregroundColor(.secondary)
-                    .cornerRadius(6)
-            }
-        case .on:
-            Button(action: { showDisableGuide = true }) {
-                Text("关闭")
-                    .font(.footnote)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.red.opacity(0.2))
-                    .foregroundColor(.red)
-                    .cornerRadius(6)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red.opacity(0.3), lineWidth: 1))
-            }
-        case .failed:
-            Button(action: { spoofingState = .off }) {
-                Text("重试")
-                    .font(.caption)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.blue.opacity(0.1))
-                    .foregroundColor(.blue)
-                    .cornerRadius(6)
-            }
-        }
-    }
 
     private var searchBar: some View {
         HStack(spacing: 8) {
