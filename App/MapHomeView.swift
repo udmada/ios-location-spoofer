@@ -86,6 +86,7 @@ struct MapHomeView: View {
     @State private var isSpoofing: Bool = false
     @StateObject private var locationFetcher = LocationFetcher()
     @State private var spoofedDisplayCoord: CLLocationCoordinate2D? = nil
+    @State private var lastKnownUserCoord: CLLocationCoordinate2D? = nil
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -96,6 +97,7 @@ struct MapHomeView: View {
                         Marker("目标位置", coordinate: coord)
                             .tint(.red)
                     }
+                    UserAnnotation()
                 }
                 .mapStyle(.standard(pointsOfInterest: .all))
                 .mapFeatureSelectionAccessory(.automatic)
@@ -122,6 +124,29 @@ struct MapHomeView: View {
             // 底部搜索栏
             VStack {
                 Spacer().allowsHitTesting(false)
+                HStack {
+                    Spacer()
+                    if let userCoord = lastKnownUserCoord {
+                        Button(action: {
+                            withAnimation {
+                                cameraPosition = .region(MKCoordinateRegion(
+                                    center: userCoord,
+                                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                                ))
+                            }
+                        }) {
+                            Image(systemName: "location.fill")
+                                .font(.title3)
+                                .foregroundColor(.blue)
+                                .padding(12)
+                                .background(.regularMaterial)
+                                .clipShape(Circle())
+                                .shadow(radius: 3)
+                        }
+                    }
+                }
+                .padding(.trailing, 12)
+                .padding(.bottom, 8)
                 searchBar
             }
             .allowsHitTesting(true)
@@ -156,6 +181,7 @@ struct MapHomeView: View {
             loadRecentLocations()
             // 启动时单次定位到用户真实位置,移地图镜头过去(失败/拒权保持默认)
             locationFetcher.onLocation = { coord in
+                lastKnownUserCoord = coord
                 withAnimation {
                     cameraPosition = .region(MKCoordinateRegion(
                         center: coord,
