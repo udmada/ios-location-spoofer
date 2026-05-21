@@ -48,6 +48,8 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>App 启动时定位你当前所在区域,以便地图初始显示在你周围。不会持续追踪。</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

@@ -18,6 +18,46 @@ private extension NEVPNStatus {
     }
 }
 
+/// App 启动时单次定位用户真实位置(GCJ-02 在中国大陆,iOS 自动偏移)。
+/// 拿到位置就调 onLocation 回调,失败/拒权默默忽略,保持地图默认区域。
+private final class LocationFetcher: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    var onLocation: ((CLLocationCoordinate2D) -> Void)?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    func requestOneShot() {
+        manager.requestWhenInUseAuthorization()
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        default:
+            break  // 等 locationManagerDidChangeAuthorization 触发
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+            manager.requestLocation()
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        DispatchQueue.main.async {
+            self.onLocation?(loc.coordinate)
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // 失败默默忽略,保持默认地图区域
+    }
+}
+
 struct MapHomeView: View {
     @State private var mapSelection: MapSelection<MKMapItem>?
     @State private var cameraPosition: MapCameraPosition = .region(
@@ -44,6 +84,8 @@ struct MapHomeView: View {
     @State private var justFavorited: Bool = false
     @State private var lastErrorReason: String = ""
     @State private var isSpoofing: Bool = false
+    @StateObject private var locationFetcher = LocationFetcher()
+    @State private var spoofedDisplayCoord: CLLocationCoordinate2D? = nil
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -112,6 +154,16 @@ struct MapHomeView: View {
             refreshVPNStatus()
             loadSavedLocations()
             loadRecentLocations()
+            // 启动时单次定位到用户真实位置,移地图镜头过去(失败/拒权保持默认)
+            locationFetcher.onLocation = { coord in
+                withAnimation {
+                    cameraPosition = .region(MKCoordinateRegion(
+                        center: coord,
+                        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                    ))
+                }
+            }
+            locationFetcher.requestOneShot()
             // 根据当前数据恢复 spoofingState
             let savedName = UserDefaults.standard.string(forKey: "currentLocationName") ?? ""
             if !savedName.isEmpty && vpnConnected {
@@ -336,6 +388,15 @@ struct MapHomeView: View {
                 DiagLog.add("用户点【我已完成】:name=\(name),状态置 on,即将关 VPN")
                 if !name.isEmpty {
                     spoofingState = .on(name: name)
+                    // 镜头移到伪装位置,用户直观看到"已生效"
+                    if let target = spoofedDisplayCoord {
+                        withAnimation {
+                            cameraPosition = .region(MKCoordinateRegion(
+                                center: target,
+                                span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                            ))
+                        }
+                    }
                 }
                 // 定位已进系统缓存焊死,关 VPN 恢复全手机网络;伪装位置由 iOS 缓存维持,不受影响。
                 // 状态卡 .on 独立于 vpnConnected(全局观察者只刷 vpnStatus/vpnConnected,不重置 spoofingState)。
@@ -534,6 +595,7 @@ struct MapHomeView: View {
     private func setAsLocation() {
         guard let coord = selectedCoordinate else { return }
         let name = selectedLocationName ?? "未知位置"
+        spoofedDisplayCoord = coord  // GCJ-02 显示坐标,用户点"我已完成"后地图移到这里
         DiagLog.add("设为定位入口:坐标=(\(coord.latitude), \(coord.longitude)) 名称=\(name) vpnConnected=\(vpnConnected) → 走\(vpnConnected ? "热切重启" : "冷启动")分支")
 
         // 进入 pending 状态(尚未生效)
