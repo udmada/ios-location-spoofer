@@ -735,81 +735,87 @@ struct MapHomeView: View {
     /// 所以 .connected 后再延迟 2 秒,确保用户重启定位服务时代理已经能接请求。
     private func connectVPNForSpoofing(expectedLat: Double, expectedLon: Double, completion: @escaping (Bool, String?) -> Void) {
         DiagLog.add("[冷启动] 进入 connectVPNForSpoofing")
-        guard let manager = ContentView.vpnManager else {
-            DiagLog.add("[冷启动] 失败:vpnManager 为 nil")
-            completion(false, "VPN 配置未初始化,请重启 App")
-            return
-        }
+        DiagLog.add("[冷启动] 准备 VPN 配置(installAndStartVPN:重启用→保存→重新加载→绑定)")
 
-        let state = RestartState()
+        ContentView.installAndStartVPN { result in
+            switch result {
+            case .failure(let error):
+                DiagLog.add("[冷启动] 失败:VPN 配置准备失败 \(error.localizedDescription)")
+                completion(false, "VPN 配置准备失败:\(error.localizedDescription)")
+            case .success(let manager):
+                DiagLog.add("[冷启动] VPN 配置已就绪并启用,准备 startVPNTunnel")
 
-        let finish: (Bool, String?) -> Void = { ok, errMsg in
-            guard !state.finished else { return }
-            state.finished = true
-            if let observer = state.observer {
-                NotificationCenter.default.removeObserver(observer)
-            }
-            if ok {
-                DiagLog.add("[冷启动] VPN 已连接,启动 Go 代理就绪探测(总超时 10 秒)")
-                probeGoProxyReady(timeout: 10) { ready in
-                    if ready {
-                        DiagLog.add("[冷启动] Go TCP 就绪,启动坐标确认(总超时 15 秒)")
-                        confirmCoordsReady(expectedLat: expectedLat, expectedLon: expectedLon, timeout: 15) { matched in
-                            if matched {
-                                DiagLog.add("[冷启动] 坐标已确认,回调 completion(true)")
-                                completion(true, nil)
+                let state = RestartState()
+
+                let finish: (Bool, String?) -> Void = { ok, errMsg in
+                    guard !state.finished else { return }
+                    state.finished = true
+                    if let observer = state.observer {
+                        NotificationCenter.default.removeObserver(observer)
+                    }
+                    if ok {
+                        DiagLog.add("[冷启动] VPN 已连接,启动 Go 代理就绪探测(总超时 10 秒)")
+                        probeGoProxyReady(timeout: 10) { ready in
+                            if ready {
+                                DiagLog.add("[冷启动] Go TCP 就绪,启动坐标确认(总超时 15 秒)")
+                                confirmCoordsReady(expectedLat: expectedLat, expectedLon: expectedLon, timeout: 15) { matched in
+                                    if matched {
+                                        DiagLog.add("[冷启动] 坐标已确认,回调 completion(true)")
+                                        completion(true, nil)
+                                    } else {
+                                        DiagLog.add("[冷启动] 坐标确认超时,回调 completion(false)")
+                                        completion(false, "Go 代理已就绪但坐标确认超时,请重试")
+                                    }
+                                }
                             } else {
-                                DiagLog.add("[冷启动] 坐标确认超时,回调 completion(false)")
-                                completion(false, "Go 代理已就绪但坐标确认超时,请重试")
+                                DiagLog.add("[冷启动] Go TCP 就绪探测超时,回调 completion(false)")
+                                completion(false, "Go 代理就绪超时,请重试")
                             }
                         }
                     } else {
-                        DiagLog.add("[冷启动] Go TCP 就绪探测超时,回调 completion(false)")
-                        completion(false, "Go 代理就绪超时,请重试")
+                        DiagLog.add("[冷启动] finish 失败:\(errMsg ?? "VPN 启动失败")")
+                        completion(false, errMsg ?? "VPN 启动失败")
                     }
                 }
-            } else {
-                DiagLog.add("[冷启动] finish 失败:\(errMsg ?? "VPN 启动失败")")
-                completion(false, errMsg ?? "VPN 启动失败")
+
+                state.observer = NotificationCenter.default.addObserver(
+                    forName: .NEVPNStatusDidChange,
+                    object: nil,
+                    queue: .main
+                ) { notification in
+                    guard !state.finished else { return }
+                    guard let conn = notification.object as? NEVPNConnection,
+                          conn === manager.connection else { return }
+                    DiagLog.add("[冷启动] 观察者收到状态变化: \(manager.connection.status.diagDesc)")
+                    switch manager.connection.status {
+                    case .connected:
+                        finish(true, nil)
+                    case .invalid:
+                        finish(false, "VPN 配置失效,请重试")
+                    default:
+                        break  // 忽略 .connecting / .disconnecting / .disconnected / .reasserting 中间态
+                    }
+                }
+
+                // 兜底:进来时已是 .connected(罕见,但不接住会被 30 秒超时拖死)
+                if manager.connection.status == .connected {
+                    finish(true, nil)
+                    return
+                }
+
+                do {
+                    try manager.connection.startVPNTunnel()
+                    DiagLog.add("[冷启动] 已调 startVPNTunnel,等待 .connected 事件")
+                } catch {
+                    finish(false, "VPN 启动失败:\(error.localizedDescription)")
+                    return
+                }
+
+                // 30 秒超时(与 restartVPNForNewCoordinates 保持一致)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
+                    finish(false, "VPN 连接超时,请重试")
+                }
             }
-        }
-
-        state.observer = NotificationCenter.default.addObserver(
-            forName: .NEVPNStatusDidChange,
-            object: nil,
-            queue: .main
-        ) { notification in
-            guard !state.finished else { return }
-            guard let conn = notification.object as? NEVPNConnection,
-                  conn === manager.connection else { return }
-            DiagLog.add("[冷启动] 观察者收到状态变化: \(manager.connection.status.diagDesc)")
-            switch manager.connection.status {
-            case .connected:
-                finish(true, nil)
-            case .invalid:
-                finish(false, "VPN 配置失效,请重试")
-            default:
-                break  // 忽略 .connecting / .disconnecting / .disconnected / .reasserting 中间态
-            }
-        }
-
-        // 兜底:进来时已是 .connected(罕见,但不接住会被 30 秒超时拖死)
-        if manager.connection.status == .connected {
-            finish(true, nil)
-            return
-        }
-
-        do {
-            try manager.connection.startVPNTunnel()
-            DiagLog.add("[冷启动] 已调 startVPNTunnel,等待 .connected 事件")
-        } catch {
-            finish(false, "VPN 启动失败:\(error.localizedDescription)")
-            return
-        }
-
-        // 30 秒超时(与 restartVPNForNewCoordinates 保持一致)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
-            finish(false, "VPN 连接超时,请重试")
         }
     }
 
