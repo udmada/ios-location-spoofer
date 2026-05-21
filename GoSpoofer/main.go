@@ -24,6 +24,7 @@ import (
 	"github.com/elazarl/goproxy"
 	pb "golocationspoofer/pb"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 //#cgo CFLAGS: -DGOOS_ios -DNDEBUG
@@ -261,6 +262,7 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	}
 	logEvent(fmt.Sprintf("ARPC 解析成功 version=%s payloadLen=%d", arpc.Version, len(arpc.Payload)))
 
+	// 仅用 proto.Unmarshal 做解析验证 + 统计 wifiCount,不再用于改写。
 	wloc := &pb.AppleWLoc{}
 	if err := proto.Unmarshal(arpc.Payload, wloc); err != nil {
 		log.Printf("Failed to unmarshal protobuf: %v", err)
@@ -272,33 +274,24 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	log.Printf("Spoofing location for %d WiFi devices", wifiCount)
 	logEvent(fmt.Sprintf("已解析 AppleWLoc wifiCount=%d", wifiCount))
 
-	// wifiCount==0 的空请求(iOS 重启定位服务后的纯探测请求等),不改写直接透传给真 Apple。
 	if wifiCount == 0 {
 		logEvent("wifiCount=0,空请求透传不改写")
 		return req, nil
 	}
 
-	logEvent("最小改写实验:只改 lat/lon,保留 horizontalAccuracy/verticalAccuracy/altitude 等其他字段原值;不抹 NumCellResults/NumWifiResults/DeviceType 三字段")
-
+	// raw wire 递归 splice:只动 Location.Latitude(tag 1 varint)/Longitude(tag 2 varint)的字节,
+	// 其他所有字段(HorizontalAccuracy/Altitude/未知 tag/NumCellResults/DeviceType 等)wire 字节级保留。
 	lat := IntFromCoord(spoofLat)
 	lon := IntFromCoord(spoofLon)
+	newPayload, modifiedFields := rewriteAppleWLocCoords(arpc.Payload, lat, lon)
+	logEvent(fmt.Sprintf("raw wire 改写完成 入站 payload=%d B 出站 payload=%d B 修改 %d 处 lat/lon (spoof=(%.6f, %.6f))", len(arpc.Payload), len(newPayload), modifiedFields, spoofLat, spoofLon))
 
-	for _, device := range wloc.WifiDevices {
-		if device.Location == nil {
-			device.Location = &pb.Location{}
-		}
-		device.Location.Latitude = &lat
-		device.Location.Longitude = &lon
-	}
-	logEvent(fmt.Sprintf("已改写 %d 个 WiFi 设备的 lat/lon 为 spoof 坐标 (%.6f, %.6f)", wifiCount, spoofLat, spoofLon))
-
+	// 手工构造 ARPC 响应:magic 8B + 大端 2B 长度 + payload
 	initialBytes, _ := hex.DecodeString("0001000000010000")
-	responseBytes, err := SerializeProto(wloc, initialBytes)
-	if err != nil {
-		log.Printf("Failed to serialize protobuf: %v", err)
-		logEvent(fmt.Sprintf("SerializeProto 失败: %v,return req,nil 透传", err))
-		return req, nil
-	}
+	int16Len := make([]byte, 2)
+	binary.BigEndian.PutUint16(int16Len, uint16(len(newPayload)))
+	responseBytes := append(initialBytes, int16Len...)
+	responseBytes = append(responseBytes, newPayload...)
 
 	resp := &http.Response{
 		Request:       req,
@@ -392,3 +385,141 @@ func SerializeProto(p proto.Message, initial []byte) ([]byte, error) {
 }
 
 func main() {}
+// rewriteAppleWLocCoords 在 AppleWLoc 原始 wire bytes 上扫描所有 WifiDevices(tag=2 LEN),
+// 对每个 WifiDevice 递归调用 rewriteWifiDevice 把 lat/lon 改成 spoof 坐标。
+// 其他顶层字段(NumCellResults/CellTowerResponse/DeviceType/未知 tag 等)wire 字节级原样保留。
+// 解析失败原样返回(透传),由调用方继续走 Apple 真响应路径。
+func rewriteAppleWLocCoords(payload []byte, lat, lon int64) ([]byte, int) {
+	out := make([]byte, 0, len(payload))
+	modified := 0
+	b := payload
+	for len(b) > 0 {
+		num, typ, tagLen := protowire.ConsumeTag(b)
+		if tagLen < 0 {
+			return payload, modified
+		}
+		if num == 2 && typ == protowire.BytesType {
+			wdBytes, valLen := protowire.ConsumeBytes(b[tagLen:])
+			if valLen < 0 {
+				return payload, modified
+			}
+			newWd, sub := rewriteWifiDevice(wdBytes, lat, lon)
+			modified += sub
+			out = protowire.AppendTag(out, 2, protowire.BytesType)
+			out = protowire.AppendBytes(out, newWd)
+			b = b[tagLen+valLen:]
+		} else {
+			n := protowire.ConsumeFieldValue(num, typ, b[tagLen:])
+			if n < 0 {
+				return payload, modified
+			}
+			out = append(out, b[:tagLen+n]...)
+			b = b[tagLen+n:]
+		}
+	}
+	return out, modified
+}
+
+// rewriteWifiDevice 在 WifiDevice wire bytes 上找 Location(tag=2 LEN)子消息执行替换。
+// 若 WifiDevice 不含 Location(请求侧通常如此),则在末尾注入完整新 Location(只含 lat/lon),
+// 匹配 upstream Unmarshal 路径的 `if device.Location == nil { device.Location = &pb.Location{} }` 语义。
+// 其他字段(Bssid 等)wire 字节级保留。
+func rewriteWifiDevice(wd []byte, lat, lon int64) ([]byte, int) {
+	out := make([]byte, 0, len(wd)+24)
+	modified := 0
+	locationSeen := false
+	b := wd
+	for len(b) > 0 {
+		num, typ, tagLen := protowire.ConsumeTag(b)
+		if tagLen < 0 {
+			return wd, modified
+		}
+		if num == 2 && typ == protowire.BytesType {
+			locationSeen = true
+			locBytes, valLen := protowire.ConsumeBytes(b[tagLen:])
+			if valLen < 0 {
+				return wd, modified
+			}
+			newLoc, sub := rewriteLocation(locBytes, lat, lon)
+			modified += sub
+			out = protowire.AppendTag(out, 2, protowire.BytesType)
+			out = protowire.AppendBytes(out, newLoc)
+			b = b[tagLen+valLen:]
+		} else {
+			n := protowire.ConsumeFieldValue(num, typ, b[tagLen:])
+			if n < 0 {
+				return wd, modified
+			}
+			out = append(out, b[:tagLen+n]...)
+			b = b[tagLen+n:]
+		}
+	}
+	if !locationSeen {
+		var loc []byte
+		loc = protowire.AppendTag(loc, 1, protowire.VarintType)
+		loc = protowire.AppendVarint(loc, uint64(lat))
+		loc = protowire.AppendTag(loc, 2, protowire.VarintType)
+		loc = protowire.AppendVarint(loc, uint64(lon))
+		out = protowire.AppendTag(out, 2, protowire.BytesType)
+		out = protowire.AppendBytes(out, loc)
+		modified += 2
+	}
+	return out, modified
+}
+
+// rewriteLocation 在 Location wire bytes 上替换 Latitude(tag=1 varint)和 Longitude(tag=2 varint)。
+// 缺失字段会被注入。其他字段(HorizontalAccuracy/Altitude/未知 tag 等)wire 字节级原样保留。
+// int64 转 varint 用 uint64 重解释(protobuf int64 varint 编码规则)。
+func rewriteLocation(loc []byte, lat, lon int64) ([]byte, int) {
+	out := make([]byte, 0, len(loc)+20)
+	modified := 0
+	latSeen := false
+	lonSeen := false
+	b := loc
+	for len(b) > 0 {
+		num, typ, tagLen := protowire.ConsumeTag(b)
+		if tagLen < 0 {
+			return loc, modified
+		}
+		if num == 1 && typ == protowire.VarintType {
+			latSeen = true
+			_, valLen := protowire.ConsumeVarint(b[tagLen:])
+			if valLen < 0 {
+				return loc, modified
+			}
+			out = protowire.AppendTag(out, 1, protowire.VarintType)
+			out = protowire.AppendVarint(out, uint64(lat))
+			b = b[tagLen+valLen:]
+			modified++
+		} else if num == 2 && typ == protowire.VarintType {
+			lonSeen = true
+			_, valLen := protowire.ConsumeVarint(b[tagLen:])
+			if valLen < 0 {
+				return loc, modified
+			}
+			out = protowire.AppendTag(out, 2, protowire.VarintType)
+			out = protowire.AppendVarint(out, uint64(lon))
+			b = b[tagLen+valLen:]
+			modified++
+		} else {
+			n := protowire.ConsumeFieldValue(num, typ, b[tagLen:])
+			if n < 0 {
+				return loc, modified
+			}
+			out = append(out, b[:tagLen+n]...)
+			b = b[tagLen+n:]
+		}
+	}
+	if !latSeen {
+		out = protowire.AppendTag(out, 1, protowire.VarintType)
+		out = protowire.AppendVarint(out, uint64(lat))
+		modified++
+	}
+	if !lonSeen {
+		out = protowire.AppendTag(out, 2, protowire.VarintType)
+		out = protowire.AppendVarint(out, uint64(lon))
+		modified++
+	}
+	return out, modified
+}
+
