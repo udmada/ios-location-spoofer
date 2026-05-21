@@ -53,6 +53,14 @@ struct SettingsView: View {
                         .foregroundColor(.red)
                         .disabled(diagLog.entries.isEmpty)
                 }) {
+                    Button(action: { queryGoLogsViaIPC() }) {
+                        HStack {
+                            Image(systemName: "arrow.down.doc")
+                            Text("拉取 Go 代理日志(IPC)")
+                            Spacer()
+                        }
+                        .foregroundColor(.blue)
+                    }
                     if diagLog.entries.isEmpty {
                         Text("暂无日志。操作一次「设为定位」后回来查看。")
                             .font(.caption)
@@ -178,6 +186,38 @@ struct SettingsView: View {
         showCopiedToast = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             showCopiedToast = false
+        }
+    }
+
+    /// 通过 IPC 从 Tunnel 拉取 Go 端日志缓冲(handleLocationRequest 的逐次追踪)。
+    /// 收到的字符串按行拆开,逐行 DiagLog.add 前缀 [Go] 写进流程日志显示。
+    private func queryGoLogsViaIPC() {
+        guard let manager = ContentView.vpnManager,
+              let session = manager.connection as? NETunnelProviderSession else {
+            DiagLog.add("[Go日志] session 不可用(manager nil 或 connection 不是 NETunnelProviderSession)")
+            return
+        }
+        let request = Data("getLogs".utf8)
+        do {
+            try session.sendProviderMessage(request) { response in
+                DispatchQueue.main.async {
+                    guard let data = response, !data.isEmpty else {
+                        DiagLog.add("[Go日志] 拉取返回空(Go 端无新日志或 tunnel 未就绪)")
+                        return
+                    }
+                    guard let text = String(data: data, encoding: .utf8) else {
+                        DiagLog.add("[Go日志] 解码失败:\(data.count) 字节非 UTF-8")
+                        return
+                    }
+                    let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+                    DiagLog.add("[Go日志] 拉取到 \(lines.count) 条")
+                    for line in lines {
+                        DiagLog.add("[Go] \(line)")
+                    }
+                }
+            }
+        } catch {
+            DiagLog.add("[Go日志] sendProviderMessage 抛错:\(error.localizedDescription)")
         }
     }
 
