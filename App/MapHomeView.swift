@@ -43,6 +43,7 @@ struct MapHomeView: View {
     @State private var spoofingState: SpoofingState = .off
     @State private var justFavorited: Bool = false
     @State private var lastErrorReason: String = ""
+    @State private var isSpoofing: Bool = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -297,14 +298,15 @@ struct MapHomeView: View {
                 }
                 .disabled(justFavorited)
                 Button(action: { setAsLocation() }) {
-                    Text("设为定位")
+                    Text(isSpoofing ? "正在生效中..." : "设为定位")
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.blue)
+                        .background(isSpoofing ? Color.gray : Color.blue)
                         .foregroundColor(.white)
                         .cornerRadius(12)
                 }
+                .disabled(isSpoofing)
             }
         }
         .padding()
@@ -535,6 +537,7 @@ struct MapHomeView: View {
 
         // 进入 pending 状态(尚未生效)
         spoofingState = .pending(name: name, isClosing: false)
+        isSpoofing = true
 
         // GCJ-02 转 WGS-84
         let converted = CoordinateConverter.gcj02ToWgs84(lat: coord.latitude, lng: coord.longitude)
@@ -557,6 +560,7 @@ struct MapHomeView: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             showRestartLocationGuide = true
                             DiagLog.add("[冷启动] 已弹出重启定位服务教学")
+                            isSpoofing = false
                         }
                     }
                 } else {
@@ -564,6 +568,7 @@ struct MapHomeView: View {
                         DiagLog.add("[冷启动] connectVPNForSpoofing 回调 failure:\(errorMsg ?? "未知错误")")
                         // 失败,显示具体原因
                         spoofingState = .failed(reason: errorMsg ?? "未知错误")
+                        isSpoofing = false
                         showLocationSheet = false
                     }
                 }
@@ -837,6 +842,7 @@ struct MapHomeView: View {
         guard let manager = ContentView.vpnManager else {
             DiagLog.add("[热切] 失败:vpnManager 为 nil")
             spoofingState = .failed(reason: "VPN 配置未初始化,请重启 App")
+            isSpoofing = false
             return
         }
 
@@ -859,20 +865,24 @@ struct MapHomeView: View {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     showRestartLocationGuide = true
                                     DiagLog.add("[热切] 已弹出重启定位服务教学")
+                                    isSpoofing = false
                                 }
                             } else {
                                 DiagLog.add("[热切] 坐标确认超时,置 failed")
                                 spoofingState = .failed(reason: "坐标确认超时,请重试")
+                                isSpoofing = false
                             }
                         }
                     } else {
                         DiagLog.add("[热切] Go TCP 就绪探测超时,置 failed")
                         spoofingState = .failed(reason: "Go 代理就绪超时,请重试")
+                        isSpoofing = false
                     }
                 }
             } else {
                 DiagLog.add("[热切] finish 失败:\(errMsg ?? "VPN 重连失败")")
                 spoofingState = .failed(reason: errMsg ?? "VPN 重连失败")
+                isSpoofing = false
             }
         }
 
