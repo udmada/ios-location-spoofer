@@ -215,11 +215,45 @@ func setupCertServing(proxy *goproxy.ProxyHttpServer, cert *tls.Certificate) {
 		Bytes: certDER,
 	})
 
+	// rendoor.cert/ 收到的请求先返回这个等待页,2 秒后 meta refresh 跳 /cert 真证书。
+	// 给用户视觉反馈"事情在动",避免 Safari 空白几百毫秒后突然弹下载框的突兀感。
+	const waitPageHTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta http-equiv="refresh" content="2;url=/cert">
+<title>正在准备配置文件</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,system-ui;background:#fff;color:#222;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:20px;text-align:center}
+.title{font-size:24px;font-weight:600;margin-bottom:16px}
+.subtitle{font-size:14px;color:#666;line-height:1.6;max-width:320px}
+.fallback{margin-top:32px;font-size:13px}
+a{color:#007AFF;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="title">正在准备配置文件...</div>
+<div class="subtitle">请稍候,系统将自动弹出安装提示。<br>期间请勿关闭此页面。</div>
+<div class="fallback">如果没有自动弹出,<a href="/cert">点击这里手动下载</a></div>
+</body>
+</html>`
+
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		if req.Host == "mitm.it" || req.Host == "www.mitm.it" || req.Host == "rendoor.cert" || req.Host == "www.rendoor.cert" {
+		// 兼容:mitm.it 旧路径无视 path,直接返回证书。
+		if req.Host == "mitm.it" || req.Host == "www.mitm.it" {
 			resp := goproxy.NewResponse(req, "application/x-x509-ca-cert", http.StatusOK, string(certPEM))
 			resp.Header.Set("Content-Disposition", "attachment; filename=mitm-ca.crt")
 			return req, resp
+		}
+		// rendoor.cert:按 path 分流。/cert 真下载,其他(含 /)是 HTML 等待页。
+		if req.Host == "rendoor.cert" || req.Host == "www.rendoor.cert" {
+			if req.URL.Path == "/cert" {
+				resp := goproxy.NewResponse(req, "application/x-x509-ca-cert", http.StatusOK, string(certPEM))
+				resp.Header.Set("Content-Disposition", "attachment; filename=mitm-ca.crt")
+				return req, resp
+			}
+			return req, goproxy.NewResponse(req, "text/html; charset=utf-8", http.StatusOK, waitPageHTML)
 		}
 		return req, nil
 	})
