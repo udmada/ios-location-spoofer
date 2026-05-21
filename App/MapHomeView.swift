@@ -58,6 +58,43 @@ private final class LocationFetcher: NSObject, ObservableObject, CLLocationManag
     }
 }
 
+/// 包装 MKLocalSearchCompleter 做搜索框实时输入联想。
+/// completer 回调默认主线程,@Published 更新走 main async 保险。
+private final class SearchCompleterHelper: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    private let completer = MKLocalSearchCompleter()
+    @Published var results: [MKLocalSearchCompletion] = []
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = [.pointOfInterest, .address]
+    }
+
+    func updateQuery(_ fragment: String) {
+        if fragment.isEmpty {
+            results = []
+            return
+        }
+        completer.queryFragment = fragment
+    }
+
+    func clear() {
+        results = []
+    }
+
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        DispatchQueue.main.async {
+            self.results = completer.results
+        }
+    }
+
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        DispatchQueue.main.async {
+            self.results = []
+        }
+    }
+}
+
 struct MapHomeView: View {
     @State private var mapSelection: MapSelection<MKMapItem>?
     @State private var cameraPosition: MapCameraPosition = .region(
@@ -85,6 +122,7 @@ struct MapHomeView: View {
     @State private var lastErrorReason: String = ""
     @State private var isSpoofing: Bool = false
     @StateObject private var locationFetcher = LocationFetcher()
+    @StateObject private var searchCompleter = SearchCompleterHelper()
     @State private var spoofedDisplayCoord: CLLocationCoordinate2D? = nil
     @State private var lastKnownUserCoord: CLLocationCoordinate2D? = nil
 
@@ -147,6 +185,34 @@ struct MapHomeView: View {
                 }
                 .padding(.trailing, 12)
                 .padding(.bottom, 8)
+                // 输入联想列表(最多 5 条,搜索框非空且有结果时显示)
+                if !searchCompleter.results.isEmpty && !searchText.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(searchCompleter.results.prefix(5), id: \.self) { completion in
+                            Button(action: { selectCompletion(completion) }) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(completion.title)
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                    if !completion.subtitle.isEmpty {
+                                        Text(completion.subtitle)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                            Divider().padding(.leading, 14)
+                        }
+                    }
+                    .background(.regularMaterial)
+                    .cornerRadius(12)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                }
                 searchBar
             }
             .allowsHitTesting(true)
@@ -308,6 +374,7 @@ struct MapHomeView: View {
                     .textFieldStyle(.plain)
                     .submitLabel(.search)
                     .onSubmit { performSearch() }
+                    .onChange(of: searchText) { _, new in searchCompleter.updateQuery(new) }
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
@@ -614,6 +681,31 @@ struct MapHomeView: View {
                     self.selectedLocationName = item.name
                     self.showLocationSheet = true
                 }
+            }
+        }
+    }
+
+    /// 用户从联想列表选中某条 → 用 MKLocalSearch 解析成 MKMapItem → 移镜头 + 弹位置抽屉。
+    /// 选中后清空 searchText 与 completer.results,自然收起联想列表与键盘。
+    private func selectCompletion(_ completion: MKLocalSearchCompletion) {
+        let request = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: request)
+        search.start { response, _ in
+            guard let item = response?.mapItems.first else { return }
+            DispatchQueue.main.async {
+                let coord = item.placemark.coordinate
+                withAnimation {
+                    self.cameraPosition = .region(MKCoordinateRegion(
+                        center: coord,
+                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                    ))
+                }
+                self.selectedCoordinate = coord
+                self.selectedLocationName = item.name ?? completion.title
+                self.showLocationSheet = true
+                self.searchText = ""
+                self.searchCompleter.clear()
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }
         }
     }
