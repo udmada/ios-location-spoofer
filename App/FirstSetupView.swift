@@ -36,6 +36,7 @@ struct FirstSetupView: View {
     @State private var currentStep: SetupStep = .welcome
     @State private var errorMessage: String? = nil
     @State private var isProcessing: Bool = false
+    @State private var showInstallConfirm: Bool = false
 
     /// 配置完成回调,由 ContentView 监听 firstSetupCompleted 变化即可,这里不必显式传
 
@@ -59,6 +60,12 @@ struct FirstSetupView: View {
             Button("好的") { errorMessage = nil }
         } message: { msg in
             Text(msg)
+        }
+        .alert("确认描述文件已安装", isPresented: $showInstallConfirm) {
+            Button("我已安装") { currentStep = .trust }
+            Button("去安装", role: .cancel) { }
+        } message: {
+            Text("请确认你已在「设置→通用→VPN与设备管理」中完成了描述文件的安装。如果还没安装,请先去系统设置完成安装再点确认。")
         }
     }
 
@@ -231,7 +238,7 @@ struct FirstSetupView: View {
             }
             .disabled(isProcessing)
         case .install:
-            Button(action: { currentStep = .trust }) {
+            Button(action: { showInstallConfirm = true }) {
                 Text("我已安装,下一步")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
