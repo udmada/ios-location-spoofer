@@ -11,12 +11,14 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"log"
 	"math/big"
 	"net/http"
 	"runtime/cgo"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elazarl/goproxy"
@@ -33,6 +35,35 @@ var globalCACert *tls.Certificate
 var spoofLat float64 = 0.0
 var spoofLon float64 = 0.0
 var spoofingEnabled bool = false
+
+// 诊断日志环形缓冲:最近 maxLogEntries 条 logEvent 调用,带时间戳。
+// drainlogs 导出函数返回缓冲内容(C 串)给 Tunnel→App 诊断面板,clear 缓冲。
+const maxLogEntries = 200
+
+var logBuffer = make([]string, 0, maxLogEntries)
+var logBufferMu sync.Mutex
+
+func logEvent(msg string) {
+	stamp := time.Now().Format("15:04:05.000")
+	line := stamp + "  " + msg
+	logBufferMu.Lock()
+	logBuffer = append(logBuffer, line)
+	if len(logBuffer) > maxLogEntries {
+		logBuffer = logBuffer[len(logBuffer)-maxLogEntries:]
+	}
+	logBufferMu.Unlock()
+	// 同步写一份到 stderr(开发环境 Mac+Console.app 可见),保留原日志通路
+	log.Printf("%s", msg)
+}
+
+//export golocationspoofer_drainlogs
+func golocationspoofer_drainlogs() *C.char {
+	logBufferMu.Lock()
+	combined := strings.Join(logBuffer, "\n")
+	logBuffer = logBuffer[:0]
+	logBufferMu.Unlock()
+	return C.CString(combined)
+}
 
 func init() {
 	defer func() {
@@ -208,29 +239,38 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("PANIC in handleLocationRequest: %v", r)
+			logEvent(fmt.Sprintf("PANIC in handleLocationRequest: %v", r))
 		}
 	}()
+
+	logEvent(fmt.Sprintf("收到定位请求 Host=%s Path=%s Method=%s", req.Host, req.URL.Path, req.Method))
 
 	body, err := io.ReadAll(req.Body)
 	req.Body.Close()
 	if err != nil {
 		log.Printf("Failed to read request body: %v", err)
+		logEvent(fmt.Sprintf("读请求体失败: %v,return req,nil 透传", err))
 		return req, nil
 	}
+	logEvent(fmt.Sprintf("已读请求体 length=%d bytes", len(body)))
 
 	arpc := ArpcDeserialize(body)
 	if arpc == nil {
+		logEvent("ArpcDeserialize 返回 nil(可能 gzip/版本不兼容),return req,nil 透传")
 		return req, nil
 	}
+	logEvent(fmt.Sprintf("ARPC 解析成功 version=%s payloadLen=%d", arpc.Version, len(arpc.Payload)))
 
 	wloc := &pb.AppleWLoc{}
 	if err := proto.Unmarshal(arpc.Payload, wloc); err != nil {
 		log.Printf("Failed to unmarshal protobuf: %v", err)
+		logEvent(fmt.Sprintf("protobuf Unmarshal 失败: %v,return req,nil 透传", err))
 		return req, nil
 	}
 
 	wifiCount := len(wloc.WifiDevices)
 	log.Printf("Spoofing location for %d WiFi devices", wifiCount)
+	logEvent(fmt.Sprintf("已解析 AppleWLoc wifiCount=%d", wifiCount))
 
 	lat := IntFromCoord(spoofLat)
 	lon := IntFromCoord(spoofLon)
@@ -254,6 +294,7 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 		device.Location.MotionActivityType = &motionActivityType
 		device.Location.MotionActivityConfidence = &motionActivityConfidence
 	}
+	logEvent(fmt.Sprintf("已改写 %d 个 WiFi 设备的 Location 为 spoof 坐标 (%.6f, %.6f)", wifiCount, spoofLat, spoofLon))
 
 	wloc.NumCellResults = nil
 	wloc.NumWifiResults = nil
@@ -263,6 +304,7 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	responseBytes, err := SerializeProto(wloc, initialBytes)
 	if err != nil {
 		log.Printf("Failed to serialize protobuf: %v", err)
+		logEvent(fmt.Sprintf("SerializeProto 失败: %v,return req,nil 透传", err))
 		return req, nil
 	}
 
@@ -278,6 +320,7 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 		ContentLength: int64(len(responseBytes)),
 	}
 	resp.Header.Set("Content-Type", "application/octet-stream")
+	logEvent(fmt.Sprintf("回响应 200 OK respLen=%d wifiCount=%d", len(responseBytes), wifiCount))
 	return req, resp
 }
 
