@@ -125,6 +125,7 @@ struct MapHomeView: View {
     @StateObject private var searchCompleter = SearchCompleterHelper()
     @State private var spoofedDisplayCoord: CLLocationCoordinate2D? = nil
     @State private var lastKnownUserCoord: CLLocationCoordinate2D? = nil
+    @State private var realUserCoord: CLLocationCoordinate2D? = nil
 
     var body: some View {
         ZStack {
@@ -212,6 +213,7 @@ struct MapHomeView: View {
             // 启动时单次定位到用户真实位置,移地图镜头过去(失败/拒权保持默认)
             locationFetcher.onLocation = { coord in
                 lastKnownUserCoord = coord
+                realUserCoord = coord
                 withAnimation {
                     cameraPosition = .region(MKCoordinateRegion(
                         center: coord,
@@ -474,6 +476,7 @@ struct MapHomeView: View {
                     spoofingState = .on(name: name)
                     // 镜头移到伪装位置,用户直观看到"已生效"
                     if let target = spoofedDisplayCoord {
+                        lastKnownUserCoord = target  // 让"回到我的位置"按钮跳到伪装坐标
                         withAnimation {
                             cameraPosition = .region(MKCoordinateRegion(
                                 center: target,
@@ -1122,6 +1125,7 @@ struct MapHomeView: View {
         LocationConfiguration.shared.clearCoordinates()
         UserDefaults.standard.removeObject(forKey: "currentLocationName")
         currentLocationName = ""
+        lastKnownUserCoord = realUserCoord  // 关闭伪装后,"回到我的位置"恢复跳真实坐标
 
         // 弹出"请重启定位服务"教学
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
