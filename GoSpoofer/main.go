@@ -239,97 +239,11 @@ func handleLocationRequest(req *http.Request) (*http.Request, *http.Response) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("PANIC in handleLocationRequest: %v", r)
-			logEvent(fmt.Sprintf("PANIC in handleLocationRequest: %v", r))
+			logEvent(fmt.Sprintf("PANIC: %v", r))
 		}
 	}()
-
-	logEvent(fmt.Sprintf("收到定位请求 Host=%s Path=%s Method=%s", req.Host, req.URL.Path, req.Method))
-
-	body, err := io.ReadAll(req.Body)
-	req.Body.Close()
-	if err != nil {
-		log.Printf("Failed to read request body: %v", err)
-		logEvent(fmt.Sprintf("读请求体失败: %v,return req,nil 透传", err))
-		return req, nil
-	}
-	logEvent(fmt.Sprintf("已读请求体 length=%d bytes", len(body)))
-
-	arpc := ArpcDeserialize(body)
-	if arpc == nil {
-		logEvent("ArpcDeserialize 返回 nil(可能 gzip/版本不兼容),return req,nil 透传")
-		return req, nil
-	}
-	logEvent(fmt.Sprintf("ARPC 解析成功 version=%s payloadLen=%d", arpc.Version, len(arpc.Payload)))
-
-	wloc := &pb.AppleWLoc{}
-	if err := proto.Unmarshal(arpc.Payload, wloc); err != nil {
-		log.Printf("Failed to unmarshal protobuf: %v", err)
-		logEvent(fmt.Sprintf("protobuf Unmarshal 失败: %v,return req,nil 透传", err))
-		return req, nil
-	}
-
-	wifiCount := len(wloc.WifiDevices)
-	log.Printf("Spoofing location for %d WiFi devices", wifiCount)
-	logEvent(fmt.Sprintf("已解析 AppleWLoc wifiCount=%d", wifiCount))
-
-	// wifiCount==0 的空请求(iOS 重启定位服务后的纯探测请求等),不改写直接透传给真 Apple。
-	// 我们对空请求强行序列化会产出 35 字节残废响应(magic 头+空 wloc),iOS 收到后整次定位失败,
-	// 后续带 WiFi 的请求也救不回——表现为"时好时坏"。透传让 Apple 返回真实响应,流程不被毒化。
-	if wifiCount == 0 {
-		logEvent("wifiCount=0,空请求透传不改写")
-		return req, nil
-	}
-
-	lat := IntFromCoord(spoofLat)
-	lon := IntFromCoord(spoofLon)
-	horizontalAccuracy := int64(39)
-	verticalAccuracy := int64(1000)
-	altitude := int64(530)
-	unknownValue4 := int64(3)
-	motionActivityType := int64(63)
-	motionActivityConfidence := int64(467)
-
-	for _, device := range wloc.WifiDevices {
-		if device.Location == nil {
-			device.Location = &pb.Location{}
-		}
-		device.Location.Latitude = &lat
-		device.Location.Longitude = &lon
-		device.Location.HorizontalAccuracy = &horizontalAccuracy
-		device.Location.VerticalAccuracy = &verticalAccuracy
-		device.Location.Altitude = &altitude
-		device.Location.UnknownValue4 = &unknownValue4
-		device.Location.MotionActivityType = &motionActivityType
-		device.Location.MotionActivityConfidence = &motionActivityConfidence
-	}
-	logEvent(fmt.Sprintf("已改写 %d 个 WiFi 设备的 Location 为 spoof 坐标 (%.6f, %.6f)", wifiCount, spoofLat, spoofLon))
-
-	wloc.NumCellResults = nil
-	wloc.NumWifiResults = nil
-	wloc.DeviceType = nil
-
-	initialBytes, _ := hex.DecodeString("0001000000010000")
-	responseBytes, err := SerializeProto(wloc, initialBytes)
-	if err != nil {
-		log.Printf("Failed to serialize protobuf: %v", err)
-		logEvent(fmt.Sprintf("SerializeProto 失败: %v,return req,nil 透传", err))
-		return req, nil
-	}
-
-	resp := &http.Response{
-		Request:       req,
-		StatusCode:    http.StatusOK,
-		Status:        "200 OK",
-		Proto:         "HTTP/1.1",
-		ProtoMajor:    1,
-		ProtoMinor:    1,
-		Header:        make(http.Header),
-		Body:          io.NopCloser(bytes.NewReader(responseBytes)),
-		ContentLength: int64(len(responseBytes)),
-	}
-	resp.Header.Set("Content-Type", "application/octet-stream")
-	logEvent(fmt.Sprintf("回响应 200 OK respLen=%d wifiCount=%d", len(responseBytes), wifiCount))
-	return req, resp
+	logEvent(fmt.Sprintf("基线测试:纯透传 Host=%s Path=%s Method=%s,不改写直接返回", req.Host, req.URL.Path, req.Method))
+	return req, nil
 }
 
 func generateCA() (certPEM, keyPEM []byte, err error) {
