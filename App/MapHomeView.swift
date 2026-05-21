@@ -200,12 +200,13 @@ struct MapHomeView: View {
         case .on:
             Button(action: { showDisableGuide = true }) {
                 Text("关闭")
-                    .font(.caption)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.red.opacity(0.1))
+                    .font(.footnote)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.red.opacity(0.2))
                     .foregroundColor(.red)
                     .cornerRadius(6)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red.opacity(0.3), lineWidth: 1))
             }
         case .failed:
             Button(action: { spoofingState = .off }) {
