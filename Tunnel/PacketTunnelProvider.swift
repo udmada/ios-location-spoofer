@@ -146,6 +146,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             withUnsafeBytes(of: &lat) { resp.append(contentsOf: $0) }
             withUnsafeBytes(of: &lon) { resp.append(contentsOf: $0) }
             handler(resp)
+        case "getLogs":
+            // 拉取 Go 内部 handleLocationRequest 的逐次执行日志(诊断面板用)。
+            // 回包为日志文本 UTF-8;无日志或 proxy 未起 → handler(nil)。
+            guard let proxy = goLocationSpoofer,
+                  let logs = proxy.drainGoLogs() else {
+                handler(nil)
+                return
+            }
+            handler(Data(logs.utf8))
         default:
             // 未知命令保持原 echo 行为,兼容潜在旧调用方
             handler(messageData)

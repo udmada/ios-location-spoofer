@@ -138,4 +138,14 @@ class GoLocationSpoofer {
         return (lat: Double(result.r0), lon: Double(result.r1), enabled: result.r2 != 0)
     }
 
+    /// 拉取并清空 Go 端环形日志缓冲(handleLocationRequest 的逐次追踪)。
+    /// 返回最近 maxLogEntries 条 logEvent 拼接的字符串;无日志/未启动返回 nil。
+    func drainGoLogs() -> String? {
+        guard proxyHandle != nil else { return nil }
+        guard let cString = golocationspoofer_drainlogs() else { return nil }
+        let logs = String(cString: cString)
+        free(cString)
+        return logs.isEmpty ? nil : logs
+    }
+
 }
